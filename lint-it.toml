@@ -1,0 +1,4 @@
+[workspace]
+default_profile = "tooling"
+override_budget = 0
+dependency_override_budget = 0

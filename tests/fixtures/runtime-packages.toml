@@ -1,0 +1,31 @@
+retired = ["example.scraping", "example.runner", "example.app", "example_api"]
+
+[packages.example]
+root = "src/example"
+distribution = "example"
+allowed = ["sample_contracts", "example"]
+forbidden = ["aiolimiter", "bs4", "croniter", "numpy", "playwright", "pysonnet", "xgboost"]
+
+[packages.example_scraping]
+root = "packages/example-scraping/src/example_scraping"
+distribution = "example-scraping"
+allowed = ["sample_contracts", "example", "example_scraping"]
+forbidden = []
+
+[packages.example_runner]
+root = "packages/example-runner/src/example_runner"
+distribution = "example-runner"
+allowed = ["sample_contracts", "example", "example_runner", "example_scraping"]
+forbidden = []
+
+[packages.sample_contracts]
+root = "packages/sample-contracts/src/sample_contracts"
+distribution = "sample-contracts"
+allowed = ["sample_contracts"]
+forbidden = ["aiolimiter", "bs4", "croniter", "numpy", "playwright", "pysonnet", "xgboost"]
+
+[packages.sample_sdk]
+root = "packages/sample-sdk/src/sample_sdk"
+distribution = "sample-sdk"
+allowed = ["sample_contracts", "sample_sdk"]
+forbidden = ["aiolimiter", "bs4", "croniter", "numpy", "playwright", "pysonnet", "xgboost"]
