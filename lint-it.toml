@@ -1,4 +1,17 @@
 [workspace]
-default_profile = "tooling"
-override_budget = 0
-dependency_override_budget = 0
+kind = "library"
+layout = "lint-it"
+
+[layouts.lint-it]
+extends = "flat"
+layers = [
+  { glob = "src/*/config_values.py", layer = "core" },
+  { glob = "src/*/engine.py", layer = "core" },
+  { glob = "src/*/globs.py", layer = "core" },
+  { glob = "src/*/imports.py", layer = "core" },
+  { glob = "src/*/layouts.py", layer = "core" },
+  { glob = "src/*/reporting.py", layer = "core" },
+  { glob = "src/*/symbols.py", layer = "core" },
+  { glob = "src/*/workspace.py", layer = "core" },
+  { glob = "src/*/rules/**/*.py", layer = "core" },
+]

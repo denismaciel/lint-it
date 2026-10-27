@@ -4,24 +4,21 @@ import ast
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from lint_it.architecture import Source
+from lint_it.imports import absolute_module, package_name
+from lint_it.workspace import Source
 
 
-def _imports(
-    tree: ast.Module, module: str, is_package: bool
+def module_imports(
+    tree: ast.Module, package: str | None
 ) -> Iterable[tuple[ast.AST, str, str | None]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield node, alias.name, None
         elif isinstance(node, ast.ImportFrom):
-            base = node.module or ""
-            if node.level:
-                parent = module.split(".") if is_package else module.split(".")[:-1]
-                if node.level > len(parent):
-                    continue
-                prefix = parent[: len(parent) - node.level + 1]
-                base = ".".join([*prefix, *base.split(".")]) if base else ".".join(prefix)
+            base = absolute_module(node, package)
+            if base is None:
+                continue
             for alias in node.names:
                 yield node, base, alias.name
 
@@ -44,8 +41,8 @@ def _targets(
     # Follow explicit re-exports, including package __init__ modules.
     if name is not None:
         exports: list[Source] = []
-        for node, imported, symbol in _imports(
-            source.tree, module, source.path.name == "__init__.py"
+        for node, imported, symbol in module_imports(
+            source.tree, package_name(module, source.path)
         ):
             if not isinstance(node, ast.ImportFrom) or node not in source.tree.body:
                 continue
@@ -75,7 +72,7 @@ def _initialization_imports(tree: ast.Module) -> ast.Module:
     return ast.Module(body=imports, type_ignores=[])
 
 
-def _loaded_sources(
+def loaded_sources(
     module: str,
     name: str | None,
     modules: Mapping[str, Source],
@@ -108,12 +105,10 @@ def _loaded_sources(
             # an initializer also execute their own imports transitively.
             if item.path.name == "__init__.py" or transitive:
                 expanded.add(item.path)
-                item_module = module_names[item.path]
                 pending.extend(
                     (base, member, True)
-                    for _, base, member in _imports(
+                    for _, base, member in module_imports(
                         _initialization_imports(item.tree),
-                        item_module,
-                        item.path.name == "__init__.py",
+                        package_name(module_names[item.path], item.path),
                     )
                 )

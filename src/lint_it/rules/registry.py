@@ -1,56 +1,52 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 from lint_it.core import Rule
-from lint_it.rules.pal001 import NoArgumentDefaultsRule
-from lint_it.rules.pal002 import NoTestMocksRule
-from lint_it.rules.pal003 import DomainImportRule
-from lint_it.rules.pal004 import EnvironmentAccessRule
-from lint_it.rules.pal005 import TransactionBoundaryRule
-from lint_it.rules.pal006 import RouterConstructionRule
-from lint_it.rules.pal007 import NoDomainFastApiRule
-from lint_it.rules.pal008 import NoServerImportsRule
-from lint_it.rules.pal009 import DomainSqlAlchemyImportRule
-from lint_it.rules.pal010 import DomainPersistenceImportRule
-from lint_it.rules.pal011 import HiddenNondeterminismRule
-from lint_it.rules.pal012 import BoundaryValidationRule
-from lint_it.rules.pal013 import ExplicitPolicyTypesRule
-from lint_it.rules.pal014 import ImperativeShellRule
-from lint_it.rules.pal015 import ExpectedOutcomeRule
-from lint_it.rules.pal016 import ClassificationRule
-from lint_it.rules.pal017 import LayerDependencyRule
-from lint_it.rules.pal018 import RuntimeSettingsRule
-from lint_it.rules.pal019 import BorrowedMutationRule
-from lint_it.rules.pal020 import AmbientStateRule
-from lint_it.rules.pal021 import ImmutableValueRule
-from lint_it.rules.pal022 import SynchronousCoreRule
-from lint_it.rules.pal023 import EffectfulCapabilityRule
-from lint_it.rules.pal024 import ServiceBoundaryDependencyRule
+from lint_it.rules.ambient_state import AmbientStateRule
+from lint_it.rules.async_core import AsyncCoreRule
+from lint_it.rules.borrowed_mutation import BorrowedMutationRule
+from lint_it.rules.capabilities import EffectfulCapabilityRule
+from lint_it.rules.client_imports import ClientImportRule
+from lint_it.rules.defaults import ImmutableDefaultRule
+from lint_it.rules.environment import EnvironmentAccessRule
+from lint_it.rules.forbidden_imports import ForbiddenImportRule
+from lint_it.rules.frozen_values import FrozenValueRule
+from lint_it.rules.io_calls import IoCallRule
+from lint_it.rules.layer_dependencies import LayerDependencyRule
+from lint_it.rules.meta import ManifestRule, ParseErrorRule, UnclassifiedFileRule
+from lint_it.rules.mocking import MockingRule
+from lint_it.rules.nondeterminism import NondeterminismRule
+from lint_it.rules.outcomes import ExpectedOutcomeRule
+from lint_it.rules.policy_types import BooleanPolicyRule
+from lint_it.rules.routers import RouterConstructionRule
+from lint_it.rules.transactions import TransactionBoundaryRule
+
+PARSE_ERROR = ParseErrorRule()
+MANIFEST = ManifestRule()
 
 ALL_RULES: tuple[Rule, ...] = (
-    NoArgumentDefaultsRule(),
-    NoTestMocksRule(),
-    DomainImportRule(),
+    PARSE_ERROR,
+    UnclassifiedFileRule(),
+    MANIFEST,
+    LayerDependencyRule(),
+    ForbiddenImportRule(),
+    ClientImportRule(),
+    NondeterminismRule(),
+    IoCallRule(),
+    AmbientStateRule(),
+    BorrowedMutationRule(),
+    FrozenValueRule(),
+    AsyncCoreRule(),
+    EffectfulCapabilityRule(),
     EnvironmentAccessRule(),
     TransactionBoundaryRule(),
     RouterConstructionRule(),
-    NoDomainFastApiRule(),
-    NoServerImportsRule(),
-    DomainSqlAlchemyImportRule(),
-    DomainPersistenceImportRule(),
-    HiddenNondeterminismRule(),
-    BoundaryValidationRule(),
-    ExplicitPolicyTypesRule(),
-    ImperativeShellRule(),
+    MockingRule(),
+    ImmutableDefaultRule(),
+    BooleanPolicyRule(),
     ExpectedOutcomeRule(),
-    ClassificationRule(),
-    LayerDependencyRule(),
-    RuntimeSettingsRule(),
-    SynchronousCoreRule(),
-    ImmutableValueRule(),
-    AmbientStateRule(),
-    BorrowedMutationRule(),
-    EffectfulCapabilityRule(),
-    ServiceBoundaryDependencyRule(),
 )
 
-RULES_BY_CODE = {rule.code: rule for rule in ALL_RULES}
+RULES_BY_CODE: Mapping[str, Rule] = MappingProxyType({rule.code: rule for rule in ALL_RULES})

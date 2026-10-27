@@ -1,37 +1,115 @@
+from __future__ import annotations
+
 import ast
-from pathlib import Path
 
 import pytest
+from conftest import Project
 
-from lint_it.core import check_tree
-from lint_it.filesystem import check_paths, workspace_architecture
-from lint_it.rules.registry import ALL_RULES
+from lint_it import engine
+from lint_it.rules.capabilities import EffectfulCapabilityRule
 
 CORE = "src/example/domains/orders/core.py"
+MODEL = "src/example/domains/orders/model.py"
+PORTS = "src/example/domains/orders/ports.py"
+SERVICE = "src/example/domains/orders/service.py"
 
 
-def codes(source: str, filename: str = CORE) -> set[str]:
-    return {item.code for item in check_tree(ast.parse(source), filename, ALL_RULES)}
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from uuid import uuid4 as make_id\ndef calculate():\n    return make_id()",
+        "import datetime as dt\ndef calculate():\n    return dt.datetime.now(dt.UTC)",
+        "import random\nvalue = random.choice(('a', 'b'))",
+        "import secrets\ntoken = secrets.token_hex()",
+        "import time\nstart = time.monotonic()",
+        "import os\nseed = os.urandom(8)",
+        """\
+        import uuid
+        from dataclasses import dataclass, field
+        @dataclass(frozen=True)
+        class Value:
+            id: uuid.UUID = field(default_factory=uuid.uuid4)
+        """,
+        """\
+        from datetime import datetime
+        from dataclasses import dataclass, field
+        @dataclass(frozen=True)
+        class Created:
+            at: datetime = field(default_factory=datetime.now)
+        """,
+    ],
+)
+def test_lit201_rejects_nondeterminism_in_core(project: Project, source: str) -> None:
+    [finding] = project.write({CORE: source}).findings(CORE)
+    assert finding.code == "LIT201"
+    assert "pass the observed" in finding.message
+
+
+def test_lit201_allows_deterministic_ids(project: Project) -> None:
+    source = "import uuid\ndef calculate(namespace, key):\n    return uuid.uuid5(namespace, key)"
+    assert project.lint(CORE, source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from datetime import datetime as D\nnow = D.now()",
+        "import datetime as dt\nnow = dt.datetime.utcnow()",
+        "from datetime import date\nnow = date.today()",
+        "import time as t\nnow = t.time_ns()",
+        "from time import time as read\nnow = read()",
+        "from datetime import datetime\nread = datetime.now",
+    ],
+)
+@pytest.mark.parametrize("path", [SERVICE, "src/example/app/main.py", "scripts/report.py"])
+def test_lit201_requires_the_clock_outside_core(project: Project, path: str, source: str) -> None:
+    [finding] = project.write({path: source}).findings(path)
+    assert finding.code == "LIT201"
+    assert "workspace.clock_modules" in finding.message
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import time\nstart = time.monotonic()",
+        "import time\nstart = time.perf_counter_ns()",
+        "import uuid\nvalue = uuid.uuid4()",
+        "class Clock:\n    def now(self): ...\nnow = Clock().now()",
+    ],
+)
+def test_lit201_allows_other_sources_outside_core(project: Project, source: str) -> None:
+    assert project.lint(SERVICE, source) == []
+
+
+def test_lit201_exempts_clock_modules_and_tests_but_not_core(project: Project) -> None:
+    project.manifest(
+        '[workspace]\nclock_modules = ["example.integrations.clock", "example.domains.orders.core"]'
+    )
+    read = "from datetime import datetime\nnow = datetime.now()\n"
+    assert project.lint("src/example/integrations/clock.py", read) == []
+    assert project.lint("src/example/integrations/other.py", read) == ["LIT201"]
+    assert project.lint("tests/test_clock.py", read) == []
+    assert project.lint(CORE, read) == ["LIT201"]
 
 
 @pytest.mark.parametrize(
     "source",
     [
         "from pathlib import Path\ndef read(path: Path):\n    return path.read_text()",
-        'from pathlib import Path as P\ndef read():\n    p = P("x")\n    return p.exists()',
+        'from pathlib import Path as P\ndef read():\n    return P("x").exists()',
         'import pathlib as p\ndef read():\n    return p.Path("x").read_bytes()',
         'import logging as log\ndef decide():\n    log.warning("x")',
-        (
-            "import logging\ndef decide():\n    logger = logging.getLo"
-            'gger(__name__)\n    logger.info("x")'
-        ),
+        'import logging\ndef decide():\n    logging.getLogger(__name__).info("x")',
         'from builtins import open as read\ndef decide():\n    return read("x")',
         'import sys\ndef decide():\n    sys.stderr.write("x")',
         'from pathlib import Path\nREADER = Path("x").read_text',
+        "print('x')",
+        "import shutil\nshutil.rmtree('x')",
     ],
 )
-def test_known_io_is_rejected(source: str) -> None:
-    assert "PAL014" in codes(source)
+@pytest.mark.parametrize("path", [CORE, PORTS])
+def test_lit202_rejects_io_in_core(project: Project, path: str, source: str) -> None:
+    assert "LIT202" in project.lint(path, source)
 
 
 @pytest.mark.parametrize(
@@ -44,37 +122,80 @@ def test_known_io_is_rejected(source: str) -> None:
         "def other():\n    import logging\ndef calculate(logging):\n    return logging.info(1)",
         "import logging\ndef calculate():\n    logging = object()\n    return logging.info(1)",
         "import logging\nvalues = [logging.info(1) for logging in ()]",
-        (
-            "import logging\ndef calculate(flag, other):\n    if flag:"
-            "\n        target = logging\n    else:\n        target = ot"
-            "her\n    return target.info(1)"
-        ),
+        """\
+        import logging
+        def calculate(flag, other):
+            if flag:
+                target = logging
+            else:
+                target = other
+            return target.info(1)
+        """,
+        "import logging\ndef calculate():\n    return logging.info(1)\nlogging = object()",
+        """\
+        import logging
+        def calculate(value):
+            match value:
+                case logging:
+                    return logging.info(1)
+        """,
+        """\
+        import logging
+        def calculate():
+            try:
+                work()
+            except ValueError as logging:
+                return logging.info(1)
+        """,
     ],
 )
-def test_unresolved_or_shadowed_names_are_not_invented_effects(source: str) -> None:
-    assert "PAL014" not in codes(source)
+def test_lit202_does_not_invent_effects_for_shadowed_names(project: Project, source: str) -> None:
+    assert "LIT202" not in project.lint(CORE, source)
+
+
+def test_lit202_allows_io_in_the_shell(project: Project) -> None:
+    assert project.lint(SERVICE, "print('x')\nopen('x')\n") == []
 
 
 @pytest.mark.parametrize(
     "source",
     [
-        "from uuid import uuid4 as make_id\ndef calculate():\n    return make_id()",
-        "import datetime as dt\ndef calculate():\n    return dt.datetime.now(dt.UTC)",
-        (
-            "import uuid\nfrom dataclasses import dataclass, field\n@d"
-            "ataclass(frozen=True)\nclass Value:\n    id: uuid.UUID = "
-            "field(default_factory=uuid.uuid4)"
-        ),
+        "STATE = []\ndef calculate():\n    return len(STATE)",
+        "count = 0\ndef calculate():\n    global count\n    count += 1",
+        """\
+        import contextvars
+        request = contextvars.ContextVar("request")
+        def calculate():
+            return request.get()
+        """,
+        "from decimal import getcontext\ndef calculate():\n    return getcontext().prec",
+        "import os\ndef calculate():\n    return os.getcwd()",
     ],
 )
-def test_nondeterminism_in_calls_and_factories_is_rejected(source: str) -> None:
-    assert "PAL011" in codes(source)
+def test_lit203_rejects_ambient_state(project: Project, source: str) -> None:
+    assert "LIT203" in project.lint(CORE, source)
 
 
-def test_explicit_deterministic_id_is_allowed() -> None:
-    assert "PAL011" not in codes(
-        "import uuid\ndef calculate(namespace, key):\n    return uuid.uuid5(namespace, key)"
-    )
+@pytest.mark.parametrize(
+    "source",
+    [
+        "STATE = []\ndef calculate(STATE):\n    return len(STATE)",
+        """\
+        STATE = []
+        def calculate():
+            STATE = (1, 2)
+            def count():
+                return len(STATE)
+            return count()
+        """,
+    ],
+)
+def test_lit203_respects_shadowing(project: Project, source: str) -> None:
+    assert project.lint(CORE, source) == []
+
+
+def test_lit203_leaves_environment_to_lit301(project: Project) -> None:
+    assert project.lint(CORE, "import os\nvalue = os.getenv('X')\n") == ["LIT301"]
 
 
 @pytest.mark.parametrize(
@@ -87,85 +208,64 @@ def test_explicit_deterministic_id_is_allowed() -> None:
         "def calculate(order):\n    del order.status",
         'def calculate(order):\n    setattr(order, "status", "sent")',
         "def calculate(items: list[int]):\n    items += [1]",
-        (
-            "def calculate(items: list[object]):\n    copied = list(i"
-            'tems)\n    copied[0].status = "sent"'
-        ),
-        'def calculate(items: list[object]):\n    for item in items:\n        item.status = "sent"',
-        (
-            "def calculate(items: list[object]):\n    copied = items["
-            ':] \n    copied[0].status = "sent"'
-        ),
+        'def calculate(items: list[object]):\n    copied = list(items)\n    copied[0].status = "x"',
+        'def calculate(items: list[object]):\n    for item in items:\n        item.status = "x"',
+        'def calculate(items: list[object]):\n    copied = items[:]\n    copied[0].status = "x"',
     ],
 )
-def test_borrowed_mutation_is_rejected(source: str) -> None:
-    assert "PAL019" in codes(source)
+def test_lit204_rejects_borrowed_mutation(project: Project, source: str) -> None:
+    assert "LIT204" in project.lint(CORE, source)
 
 
 @pytest.mark.parametrize(
     "source",
     [
-        (
-            "def calculate(items: tuple[int, ...]):\n    result = []\n"
-            "    for item in items:\n        result.append(item)\n    "
-            "return tuple(result)"
-        ),
-        (
-            "def calculate(items: list[int]):\n    copied = list(item"
-            "s)\n    copied.sort()\n    return tuple(copied)"
-        ),
+        """\
+        def calculate(items: tuple[int, ...]):
+            result = []
+            for item in items:
+                result.append(item)
+            return tuple(result)
+        """,
+        "def calculate(items: list[int]):\n    copied = list(items)\n    copied.sort()",
         "def calculate(items: list[int]):\n    alias = items\n    alias = []\n    alias.append(1)",
         "def calculate(number: int):\n    number += 1\n    return number",
         "def calculate(items: list[int]):\n    def nested(items):\n        items.clear()",
+        "def calculate(items: list[int]):\n    return [items.clear() for items in [[], []]]",
     ],
 )
-def test_local_mutation_and_rebinding_are_allowed(source: str) -> None:
-    assert "PAL019" not in codes(source)
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        "STATE = []\ndef calculate():\n    return len(STATE)",
-        "count = 0\ndef calculate():\n    global count\n    count += 1",
-        (
-            'import contextvars\nrequest = contextvars.ContextVar("re'
-            'quest")\ndef calculate():\n    return request.get()'
-        ),
-        "from decimal import getcontext\ndef calculate():\n    return getcontext().prec",
-    ],
-)
-def test_ambient_state_is_rejected(source: str) -> None:
-    assert "PAL020" in codes(source)
-
-
-def test_local_shadow_of_mutable_global_is_allowed() -> None:
-    assert "PAL020" not in codes("STATE = []\ndef calculate(STATE):\n    return len(STATE)")
+def test_lit204_allows_local_mutation(project: Project, source: str) -> None:
+    assert "LIT204" not in project.lint(CORE, source)
 
 
 @pytest.mark.parametrize(
     "source",
     [
         "from dataclasses import dataclass\n@dataclass\nclass Order:\n    id: str",
-        (
-            "from dataclasses import dataclass as dc\n@dc(frozen=True"
-            ")\nclass Order:\n    ids: list[str]"
-        ),
-        (
-            "from dataclasses import dataclass\n@dataclass(frozen=Tru"
-            "e)\nclass Order:\n    ids: tuple[dict[str, int], ...]"
-        ),
+        "from dataclasses import dataclass as dc\n@dc(frozen=True)\nclass Order:\n    i: list[str]",
+        """\
+        from dataclasses import dataclass
+        @dataclass(frozen=True)
+        class Order:
+            ids: tuple[dict[str, int], ...]
+        """,
     ],
 )
-def test_mutable_value_records_are_rejected(source: str) -> None:
-    assert "PAL021" in codes(source)
+@pytest.mark.parametrize("path", [MODEL, PORTS])
+def test_lit205_rejects_mutable_records(project: Project, path: str, source: str) -> None:
+    assert project.lint(path, source) == ["LIT205"]
 
 
-def test_frozen_value_record_with_immutable_collections_is_allowed() -> None:
-    assert "PAL021" not in codes(
-        "from dataclasses import dataclass\n@dataclass(frozen=Tru"
-        "e)\nclass Order:\n    ids: tuple[str, ...]"
-    )
+def test_lit205_allows_frozen_records(project: Project) -> None:
+    source = """\
+        from dataclasses import dataclass
+        from typing import ClassVar
+        @dataclass(frozen=True)
+        class Order:
+            ids: tuple[str, ...]
+            registry: ClassVar[dict[str, int]] = {}
+    """
+    assert project.lint(MODEL, source) == []
 
 
 @pytest.mark.parametrize(
@@ -175,93 +275,115 @@ def test_frozen_value_record_with_immutable_collections_is_allowed() -> None:
         "import asyncio\ndef calculate():\n    asyncio.create_task(work())",
         "async def calculate(stream):\n    async for value in stream:\n        pass",
         "async def calculate(lock):\n    async with lock:\n        pass",
+        "import threading\nworker = threading.Thread(target=int)",
     ],
 )
-def test_async_execution_is_rejected_in_core(source: str) -> None:
-    assert "PAL022" in codes(source)
-    assert "PAL022" not in codes(source, "src/example/domains/orders/service.py")
-    assert "PAL022" not in codes(source, "src/example/domains/orders/ports.py")
-
-
-def test_snapshot_analysis_is_independent_of_live_files(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[project]\nname="example"\nversion="1"')
-    (tmp_path / "lint-it.toml").write_text("")
-    path = tmp_path / "src/example/domains/orders/core.py"
-    path.parent.mkdir(parents=True)
-    path.write_text('from pathlib import Path\nvalue = Path("x").read_text()')
-    snapshot = workspace_architecture(tmp_path)
-    before = check_tree(snapshot.sources[0].tree, str(path), ALL_RULES, snapshot)
-    path.unlink()
-    (tmp_path / "lint-it.toml").unlink()
-    assert check_tree(snapshot.sources[0].tree, str(path), ALL_RULES, snapshot) == before
-    assert any(item.code == "PAL014" for item in before)
+def test_lit206_keeps_async_out_of_core(project: Project, source: str) -> None:
+    assert project.lint(CORE, source) == ["LIT206"]
+    assert "LIT206" not in project.lint(SERVICE, source)
+    assert "LIT206" not in project.lint(PORTS, source)
 
 
 @pytest.mark.parametrize(
-    "statement", ["from support import fetch", "from support.model import Value"]
+    "annotation",
+    [
+        "S",
+        "S | None",
+        '"S | None"',
+        "Optional[S]",
+        'Optional["S"]',
+        "Annotated[S, 'database']",
+        '"Annotated[S, metadata]"',
+        "list[S]",
+    ],
 )
-def test_cross_package_reexport_cannot_hide_adapter(tmp_path: Path, statement: str) -> None:
-    (tmp_path / "lint-it.toml").write_text(
-        '[[packages]]\npath="packages/support"\nprofile="infrastructure"'
+def test_lit207_resolves_wrapped_and_forward_annotations(project: Project, annotation: str) -> None:
+    project.write(
+        {
+            CORE: "from sqlalchemy.orm import Session as S\n"
+            "from typing import Annotated, Optional\n"
+            f"def decide(session: {annotation}): ...\n"
+        }
     )
-    paths = {
-        "pyproject.toml": '[project]\nname="app"\nversion="1"',
-        "packages/support/pyproject.toml": '[project]\nname="support"\nversion="1"',
-        "src/app/domains/orders/core.py": statement,
-        "packages/support/src/support/model.py": "class Value: pass",
-        "packages/support/src/support/__init__.py": "from support.adapters.client import fetch\n",
-        "packages/support/src/support/adapters/client.py": "def fetch():\n    return 1\n",
-    }
-    for relative, source in paths.items():
-        path = tmp_path / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(source)
-    result = check_paths([tmp_path / "src/app/domains/orders/core.py"], ALL_RULES)
-    assert any(item.code == "PAL017" and "adapter" in item.message for item in result)
+    [finding] = [item for item in project.findings(CORE) if item.code == "LIT207"]
+    assert "sqlalchemy.orm.Session" in finding.message
+
+
+@pytest.mark.parametrize(
+    "signature",
+    [
+        "def decide(session: S, /): ...",
+        "def decide(*, session: S): ...",
+        "def decide(*session: S): ...",
+        "def decide(**session: S): ...",
+        "class Decision:\n    def __init__(self, session: S): ...",
+        "async def decide(session: S): ...",
+    ],
+)
+def test_lit207_checks_every_parameter_position(project: Project, signature: str) -> None:
+    source = "from httpx import Client as S\n" + signature
+    assert project.write({CORE: source}).codes(CORE).count("LIT207") == 1
+
+
+@pytest.mark.parametrize(
+    "type_name",
+    [
+        "httpx.AsyncClient",
+        "requests.Session",
+        "aiohttp.ClientSession",
+        "io.TextIOBase",
+        "typing.BinaryIO",
+        "fsspec.AbstractFileSystem",
+        "sqlite3.Connection",
+    ],
+)
+def test_lit207_knows_library_capabilities(project: Project, type_name: str) -> None:
+    module, _, name = type_name.rpartition(".")
+    source = f"from {module} import {name}\ndef decide(value: {name}): ...\n"
+    assert "LIT207" in project.lint(CORE, source)
 
 
 @pytest.mark.parametrize(
     "source",
     [
-        "import logging\ndef calculate():\n    return logging.info(1)\nlogging = object()",
-        "import logging\ndef calculate(value):\n    match value:\n"
-        "        case logging:\n            return logging.info(1)",
-        "import logging\ndef calculate():\n    try:\n        work()\n"
-        "    except ValueError as logging:\n        return logging.info(1)",
+        "from pathlib import Path\ndef decide(path: Path): ...",
+        "class Repository: ...\ndef decide(repository: Repository): ...",
+        "from unknown import Session\ndef decide(session: Session): ...",
+        "from typing import Callable\ndef decide(fn: Callable[[int], int]): ...",
+        "from typing import Any\ndef decide(session: Any): ...",
+        "def decide(session): ...",
+        "from sqlalchemy.orm import Session\nclass Session: ...\ndef decide(s: Session): ...",
+        "from typing import Literal\nfrom io import IOBase\ndef f(x: Literal['IOBase']): ...",
+        "from typing import Annotated as A\nfrom io import IOBase\ndef f(x: A[int, IOBase]): ...",
     ],
 )
-def test_late_globals_and_pattern_bindings_do_not_invent_effects(source: str) -> None:
-    assert "PAL014" not in codes(source)
+def test_lit207_does_not_guess(project: Project, source: str) -> None:
+    assert "LIT207" not in project.lint(CORE, source)
 
 
-@pytest.mark.parametrize(
-    "source",
-    [
-        "def calculate(items=[]):\n    return items",
-        "def calculate(items={}):\n    return items",
-        "def calculate(items=set()):\n    return items",
-    ],
-)
-def test_mutable_core_defaults_are_rejected(source: str) -> None:
-    assert "PAL001" in codes(source)
+@pytest.mark.parametrize("path", [SERVICE, PORTS])
+def test_lit207_allows_capabilities_outside_core(project: Project, path: str) -> None:
+    assert "LIT207" not in project.lint(path, "from io import IOBase\ndef run(f: IOBase): ...\n")
 
 
-def test_import_time_factories_cannot_hide_observed_time() -> None:
-    assert "PAL011" in codes(
-        "from datetime import datetime\nfrom dataclasses import dataclass, field\n"
-        "@dataclass(frozen=True)\nclass Created:\n"
-        "    created_at: datetime = field(default_factory=datetime.now)"
+def test_lit207_registry_resolves_relative_imports(project: Project) -> None:
+    project.manifest('[workspace]\neffectful_types = ["example.domains.orders.ports.Clock"]\n')
+    project.write(
+        {PORTS: "class Clock: ...\n", CORE: "from .ports import Clock as C\ndef f(c: C): ...\n"}
     )
+    [finding] = project.findings(CORE)
+    assert "example.domains.orders.ports.Clock" in finding.message
 
 
-def test_comprehension_target_shadows_borrowed_argument() -> None:
-    assert "PAL019" not in codes(
-        "def calculate(items: list[int]):\n    return [items.clear() for items in [[], []]]"
-    )
+def test_lit207_follows_assignment_aliases(project: Project) -> None:
+    source = "from io import IOBase\nStream = IOBase\ndef decide(stream: Stream): ...\n"
+    assert project.lint(MODEL, source) == ["LIT207"]
 
 
-def test_closure_over_local_value_is_not_a_read_of_same_named_module_state() -> None:
-    assert "PAL020" not in codes(
-        "STATE = []\ndef calculate():\n    STATE = (1, 2)\n"
-        "    def count():\n        return len(STATE)\n    return count()"
-    )
+def test_lit207_does_not_mutate_the_snapshot(project: Project) -> None:
+    project.write({CORE: 'from io import IOBase\ndef decide(stream: "IOBase | None"): ...\n'})
+    workspace = project.load()
+    before = ast.dump(workspace.sources[0].tree)
+
+    assert engine.check(workspace, [EffectfulCapabilityRule()])
+    assert ast.dump(workspace.sources[0].tree) == before

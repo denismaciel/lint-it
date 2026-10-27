@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+from lint_it.policy import IO_PACKAGES
+
+WALL_CLOCK = frozenset(
+    {
+        "datetime.datetime.now",
+        "datetime.datetime.today",
+        "datetime.datetime.utcnow",
+        "datetime.date.today",
+        "time.time",
+        "time.time_ns",
+    }
+)
+ENVIRONMENT = frozenset({"os.environ", "os.environb", "os.getenv", "os.getenvb"})
 NONDETERMINISTIC = frozenset(
     {
         "datetime.date.today",
@@ -42,23 +55,6 @@ RANDOM_APIS = frozenset(
 )
 SECRETS_APIS = frozenset(
     {"choice", "randbelow", "randbits", "token_bytes", "token_hex", "token_urlsafe", "SystemRandom"}
-)
-IO_MODULES = frozenset(
-    {
-        "aiohttp",
-        "aiosqlite",
-        "asyncpg",
-        "boto3",
-        "botocore",
-        "httpx",
-        "playwright",
-        "psycopg",
-        "psycopg2",
-        "redis",
-        "requests",
-        "socket",
-        "subprocess",
-    }
 )
 PATH_EFFECTS = frozenset(
     {
@@ -132,8 +128,6 @@ ASYNC_APIS = frozenset(
 )
 AMBIENT = frozenset(
     {
-        "os.getenv",
-        "os.environ",
         "os.getcwd",
         "os.getcwdb",
         "os.chdir",
@@ -157,23 +151,22 @@ def is_nondeterministic(name: str) -> bool:
     )
 
 
+def is_environment(name: str) -> bool:
+    return name in ENVIRONMENT or name.startswith(("os.environ.", "os.environb."))
+
+
 def is_ambient(name: str) -> bool:
-    return (
-        name in AMBIENT
-        or name.startswith("os.environ.")
-        or name
-        in {
-            "contextvars.ContextVar.get",
-            "contextvars.ContextVar.set",
-            "contextvars.ContextVar.reset",
-        }
-    )
+    return name in AMBIENT or name in {
+        "contextvars.ContextVar.get",
+        "contextvars.ContextVar.set",
+        "contextvars.ContextVar.reset",
+    }
 
 
 def is_io(name: str) -> bool:
     module, _, member = name.rpartition(".")
     return (
-        name.split(".")[0] in IO_MODULES
+        name.split(".")[0] in IO_PACKAGES
         or name
         in {
             "builtins.open",
@@ -234,7 +227,3 @@ def is_async_effect(name: str) -> bool:
         "concurrent.futures.ThreadPoolExecutor",
         "concurrent.futures.ProcessPoolExecutor",
     }
-
-
-def is_effect(name: str) -> bool:
-    return is_nondeterministic(name) or is_ambient(name) or is_io(name) or is_async_effect(name)
