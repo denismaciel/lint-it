@@ -92,6 +92,11 @@ router = "*"
 core = ["httpx", "requests", "sqlalchemy", "pydantic"]
 router = []
 
+# Packages added to the lists above (or to the defaults) instead of replacing
+# them. "*" adds to every layer.
+[extend_forbidden_imports]
+"*" = ["legacy_app"]
+
 # Naming conventions for LIT401 and LIT402.
 [conventions]
 predicate_prefixes = ["is_", "has_", "can_"]

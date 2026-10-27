@@ -8,7 +8,7 @@ from conftest import Project
 from lint_it import engine
 from lint_it.layouts import LayerPattern
 from lint_it.loader import ManifestError
-from lint_it.policy import Layer
+from lint_it.policy import FORBIDDEN_IMPORTS, Layer
 from lint_it.rules.registry import ALL_RULES
 from lint_it.workspace import Kind, Origin
 
@@ -280,6 +280,10 @@ def test_dependency_overrides_are_validated(project: Project) -> None:
         ("[workspace]\nclock_modules = [1]", "workspace.clock_modules must be an array"),
         ('[layer_dependencies]\ncore = ["kernel"]', "layer_dependencies.core must be one of"),
         ('[forbidden_imports]\nwidget = ["x"]', "forbidden_imports key must be one of"),
+        (
+            '[extend_forbidden_imports]\nwidget = ["x"]',
+            "extend_forbidden_imports key must be one of",
+        ),
         ("[conventions]\nprefixes = []", "unknown conventions field: prefixes"),
         ("[workspace\n", "Expected ']'"),
     ],
@@ -320,6 +324,24 @@ def test_policy_sections_replace_built_in_entries(project: Project) -> None:
     assert policy.forbidden_imports[Layer.SHELL] == {"boto3"}
     assert "httpx" in policy.forbidden_imports[Layer.CORE]
     assert (policy.predicate_prefixes, policy.outcome_suffixes) == (("is_",), ("Missing",))
+
+
+def test_extend_forbidden_imports_adds_to_every_named_layer(project: Project) -> None:
+    project.manifest(
+        """
+        [forbidden_imports]
+        shell = ["boto3"]
+
+        [extend_forbidden_imports]
+        "*" = ["legacy"]
+        shell = ["redis"]
+        """
+    )
+    forbidden = project.load().policy.forbidden_imports
+
+    assert forbidden[Layer.SHELL] == {"boto3", "legacy", "redis"}
+    assert forbidden[Layer.CORE] == FORBIDDEN_IMPORTS[Layer.CORE] | {"legacy"}
+    assert all("legacy" in forbidden[layer] for layer in Layer)
 
 
 def test_snapshot_is_independent_of_later_edits(project: Project) -> None:

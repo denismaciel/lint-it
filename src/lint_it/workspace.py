@@ -357,6 +357,15 @@ def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
     for name, value in _table(raw, "forbidden_imports").items():
         layer = enum_value(Layer, name, "forbidden_imports key")
         forbidden[layer] = _qualified_names(value, f"forbidden_imports.{name}")
+    for name, value in _table(raw, "extend_forbidden_imports").items():
+        extra = _qualified_names(value, f"extend_forbidden_imports.{name}")
+        layers = (
+            tuple(Layer)
+            if name == "*"
+            else (enum_value(Layer, name, "extend_forbidden_imports key"),)
+        )
+        for layer in layers:
+            forbidden[layer] = forbidden.get(layer, frozenset()) | extra
     conventions = _table(raw, "conventions")
     reject_unknown_keys(
         conventions, frozenset({"predicate_prefixes", "outcome_suffixes"}), "conventions"
@@ -400,6 +409,7 @@ def load_manifest(
                 "layouts",
                 "layer_dependencies",
                 "forbidden_imports",
+                "extend_forbidden_imports",
                 "conventions",
                 "overrides",
                 "dependency_overrides",

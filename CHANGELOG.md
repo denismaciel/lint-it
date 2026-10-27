@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0
+
+- `[extend_forbidden_imports]` adds packages to a layer's forbidden list
+  instead of replacing it; the key `"*"` adds them to every layer. Use it to
+  keep a legacy package out of a new one without copying the defaults.
+
 ## 0.10.0
 
 A redesign for the first public release. Nothing is backward compatible with

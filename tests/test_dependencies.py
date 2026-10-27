@@ -296,6 +296,12 @@ def test_lit102_lists_are_configurable(project: Project) -> None:
     assert project.lint(CORE, "import httpx\n") == []
 
 
+def test_lit102_extended_lists_keep_the_defaults(project: Project) -> None:
+    project.manifest('[extend_forbidden_imports]\n"*" = ["legacy"]\n')
+    assert project.lint(CORE, "import httpx\nimport legacy.db\n") == ["LIT102", "LIT102"]
+    assert project.lint(SERVICE, "from legacy import x\n") == ["LIT102"]
+
+
 def _client_workspace(project: Project, statement: str) -> str:
     project.package("packages/sdk", "sdk").package("packages/contracts", "contracts").manifest(
         """

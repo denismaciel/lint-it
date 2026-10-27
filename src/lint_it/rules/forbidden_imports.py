@@ -55,7 +55,8 @@ class ForbiddenImportRule:
     `requests`, `redis`, `sqlite3`, `subprocess`, ...) or frameworks (`fastapi`,
     `starlette`, `sqlalchemy`, `pydantic`, `pydantic_settings`); shell modules
     may not import frameworks; routers may not import `sqlalchemy`. Set
-    `[forbidden_imports]` to change the lists. Every import statement counts,
+    `[forbidden_imports]` to replace a layer's list, or
+    `[extend_forbidden_imports]` to add to it. Every import statement counts,
     including deferred and `TYPE_CHECKING` ones, and a workspace module that
     re-exports a forbidden name is treated as that package.
     """
