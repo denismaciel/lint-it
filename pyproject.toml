@@ -1,6 +1,6 @@
 [project]
 name = "lint-it"
-version = "0.9.1"
+version = "0.10.0"
 description = "Strict architecture linting for Python functional cores and imperative shells"
 readme = "README.md"
 requires-python = ">=3.12"

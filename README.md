@@ -4,90 +4,27 @@
 
 **A leash for LLM-written Python.**
 
-Python has the ecosystem, and language models write a lot of it. What they write
-tends to drift the same way: state mutated in place, environment variables read
-deep inside business logic, `datetime.now()` in the middle of a calculation,
-`bool` flags that quietly switch modes, framework models leaking into everything.
-Each line looks reasonable on its own. Six months later nothing can be tested
-without mocks, and no function can be understood without reading all the others.
+## Why?
 
-lint-it makes the structured version the only version that passes. Your code
-gets a **functional core** (plain functions over immutable values) and an
-**imperative shell** (the code that does I/O, reads the clock, and talks to
-frameworks), and lint-it checks that each stays in its lane. It runs in CI and
-pre-commit, so the agent hits the wall, reads the message, and fixes its own
-code before you review it.
+Python written by LLMs sucks.
 
-## What it catches
+lint-it is the remedy for that. It's based on a handful of good ideas:
 
-A function an assistant might write in `src/shop/domains/orders/core.py`:
+- [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell).
+- [Parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
+- [The Zen of Python](https://peps.python.org/pep-0020/): "There should be one, and preferably only one, obvious way to do it."
 
-```python
-import os
-from datetime import datetime
-
-from pydantic import BaseModel
-
-APPLIED = {}
-
-
-class Order(BaseModel):
-    id: str
-    total: float
-
-
-def apply_discount(order: Order, vip: bool) -> bool:
-    if vip or os.getenv("PROMO_ACTIVE"):
-        order.total = order.total * 0.9
-        APPLIED[order.id] = datetime.now()
-        return True
-    return False
-```
-
-```text
-$ lint-it check
-src/shop/domains/orders/core.py:4:1: LIT102 core modules cannot import pydantic
-src/shop/domains/orders/core.py:14:1: LIT401 decision 'apply_discount' returns bool; return a named result or enum
-src/shop/domains/orders/core.py:14:34: LIT401 policy input 'vip' is boolean; use a named enum or value type
-src/shop/domains/orders/core.py:15:15: LIT301 core modules cannot read the environment; read configuration at a boundary and pass it in
-src/shop/domains/orders/core.py:16:9: LIT204 mutation of caller-owned 'order'; build and return a new value
-src/shop/domains/orders/core.py:17:9: LIT203 mutable module state 'APPLIED'; use an immutable constant or pass a snapshot
-src/shop/domains/orders/core.py:17:29: LIT201 datetime.datetime.now hides nondeterminism; pass the observed time, ID, or random value into the core
-7 findings in 1 file (1 file in 1 package checked)
-```
-
-Seven findings in nineteen lines, and every message says what to do instead.
-The version that passes takes everything it depends on as an argument and
-returns a new value:
-
-```python
-def apply_discount(order: Order, tier: Tier, promo: Promo, now: datetime) -> Order | Discounted:
-    if tier is Tier.REGULAR and promo is Promo.INACTIVE:
-        return order
-    return Discounted(replace(order, total=order.total * 0.9), applied_at=now)
-```
-
-`Order` and `Discounted` are frozen dataclasses; `Tier` and `Promo` are enums.
-The shell reads the environment and the clock once and passes the results in.
-Testing this function takes no mocks, no fixtures and no frozen clock, because
-it has nothing to patch.
-
-## The ideas behind it
-
-None of this is new. lint-it turns a few well-known ideas into rules a machine
-can enforce:
-
-- [Functional Core, Imperative Shell](https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell)
-  and [Boundaries](https://www.destroyallsoftware.com/talks/boundaries), by
-  Gary Bernhardt: decisions are pure functions over values; effects live in a
-  thin shell around them.
-- [Parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/),
-  by Alexis King: turn untrusted input into precise types once, at the edge.
-  Validation frameworks stay at the boundary (LIT102), and the core receives
-  enums and frozen values (LIT205, LIT401) instead of re-checking raw data.
-- [The Zen of Python](https://peps.python.org/pep-0020/): "There should be one,
-  and preferably only one, obvious way to do it." Python has accumulated many
-  ways. lint-it picks one: functions and values, with effects at the edges.
+- Separate business logic from code that talks to the outside world (data you don't control).
+- Isolate side effects.
+- Build on pure functions and values.
+- Don't rely on global state.
+- Inject your dependencies; it makes testing easier.
+- Parse outside data with Pydantic, convert it to dataclasses, then run the business logic.
+- Model domain data as well-structured dataclasses.
+- Prefer functions to methods.
+- You rarely need subclassing.
+- Raise exceptions only in specific places.
+- No default arguments or default values. Be explicit: you're not the one writing the code, the LLM is.
 
 ## How it works
 
@@ -96,14 +33,6 @@ Every file belongs to a layer, decided by its path: `core`, `port`, `shell`,
 about what it may import and which effects it may perform. Imports are followed
 across packages, re-exports and `__init__.py` files, so a dependency can't be
 laundered through a re-export.
-
-- **No escape hatches.** There are no `# noqa` comments, no baselines and no
-  per-rule switches. A real exception goes in `lint-it.toml` with a reason and
-  an issue link, and counts against an explicit budget that starts at zero.
-- **Reads code, never runs it.** lint-it parses source and never imports your
-  modules. It has no runtime dependencies and supports Python 3.12 and later.
-- **Fast enough to run on every commit.** Checking lint-it's own 45 files takes
-  about half a second.
 
 ## Install
 

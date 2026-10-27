@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 A redesign for the first public release. Nothing is backward compatible with
 0.9: the manifest schema, rule codes, CLI and Python API have all changed.
