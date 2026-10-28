@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0
+
+- `LIT403 restricted-subclassing`: a class may only extend an allowlisted base
+  (builtins, `typing`/`enum` bases, Pydantic models and settings, SQLAlchemy
+  declarative bases and `TypeDecorator`) or a workspace class that directly
+  extends one. Exception hierarchies may nest to any depth, and tables may mix
+  in plain workspace classes next to a declarative base. Configure with `conventions.allowed_bases` and
+  `conventions.extend_allowed_bases`.
+
 ## 0.11.0
 
 - `[extend_forbidden_imports]` adds packages to a layer's forbidden list

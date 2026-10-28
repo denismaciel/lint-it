@@ -97,10 +97,13 @@ router = []
 [extend_forbidden_imports]
 "*" = ["legacy_app"]
 
-# Naming conventions for LIT401 and LIT402.
+# Naming conventions for LIT401 and LIT402, and the bases classes may extend
+# (LIT403). allowed_bases replaces the default list; extend_allowed_bases adds
+# to it. A trailing ".*" allows every name in a module.
 [conventions]
 predicate_prefixes = ["is_", "has_", "can_"]
 outcome_suffixes = ["NotFound", "Denied"]
+extend_allowed_bases = ["ast.NodeVisitor", "fastapi.HTTPException"]
 ```
 
 The defaults are in [`src/lint_it/policy.py`](../src/lint_it/policy.py).

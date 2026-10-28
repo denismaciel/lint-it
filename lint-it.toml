@@ -2,6 +2,9 @@
 kind = "library"
 layout = "lint-it"
 
+[conventions]
+extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor"]
+
 [layouts.lint-it]
 extends = "flat"
 layers = [

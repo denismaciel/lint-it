@@ -296,6 +296,20 @@ def _qualified_names(value: object, field: str) -> frozenset[str]:
     return frozenset(names)
 
 
+def _base_names(value: object, field: str) -> frozenset[str]:
+    names = string_list(value, field)
+    invalid = [
+        name
+        for name in names
+        if not all(part.isidentifier() for part in name.removesuffix(".*").split("."))
+    ]
+    if invalid:
+        raise ValueError(
+            f"{field} must contain qualified Python names or module.*: {', '.join(invalid)}"
+        )
+    return frozenset(names)
+
+
 def _table(raw: Mapping[str, object], key: str) -> dict[str, object]:
     value = raw.get(key, {})
     if not isinstance(value, dict):
@@ -368,9 +382,18 @@ def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
             forbidden[layer] = forbidden.get(layer, frozenset()) | extra
     conventions = _table(raw, "conventions")
     reject_unknown_keys(
-        conventions, frozenset({"predicate_prefixes", "outcome_suffixes"}), "conventions"
+        conventions,
+        frozenset(
+            {"predicate_prefixes", "outcome_suffixes", "allowed_bases", "extend_allowed_bases"}
+        ),
+        "conventions",
     )
     defaults = DEFAULT_POLICY
+    allowed_bases = (
+        _base_names(conventions["allowed_bases"], "conventions.allowed_bases")
+        if "allowed_bases" in conventions
+        else defaults.allowed_bases
+    ) | _base_names(conventions.get("extend_allowed_bases", []), "conventions.extend_allowed_bases")
     return Policy(
         layer_dependencies=MappingProxyType(dependencies),
         forbidden_imports=MappingProxyType(forbidden),
@@ -384,6 +407,7 @@ def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
         )
         if "outcome_suffixes" in conventions
         else defaults.outcome_suffixes,
+        allowed_bases=allowed_bases,
         effectful_types=_qualified_names(
             workspace.get("effectful_types", []), "workspace.effectful_types"
         ),

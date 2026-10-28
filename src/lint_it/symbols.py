@@ -1,28 +1,26 @@
 from __future__ import annotations
 
 import ast
+import builtins
 from types import MappingProxyType
 
 from lint_it.imports import absolute_module
 
 UNKNOWN = frozenset({"?"})
-BUILTINS = frozenset(
+BUILTIN_CLASSES = frozenset(
+    name for name, value in vars(builtins).items() if isinstance(value, type)
+)
+BUILTINS = BUILTIN_CLASSES | frozenset(
     {
         "open",
         "print",
         "input",
-        "list",
-        "dict",
-        "set",
-        "tuple",
-        "frozenset",
         "getattr",
         "setattr",
         "delattr",
         "eval",
         "exec",
         "__import__",
-        "object",
     }
 )
 INSTANCE_FACTORIES = MappingProxyType(

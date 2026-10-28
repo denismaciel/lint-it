@@ -24,6 +24,7 @@
 | [LIT305](#lit305) | `immutable-defaults` | A parameter default is not an immutable literal. |
 | [LIT401](#lit401) | `boolean-policy` | A public core function takes a boolean, or returns one without a predicate name. |
 | [LIT402](#lit402) | `expected-outcome` | Core code raises or catches an expected outcome. |
+| [LIT403](#lit403) | `restricted-subclassing` | A class extends a base that is not on the allowlist. |
 
 ## Workspace
 
@@ -232,3 +233,21 @@ failures. Exceptions whose names end with a suffix from
 `Conflict`, `Denied`, `Expired`, `Forbidden`, `Rejected`, `Unauthorized`,
 `Unavailable`) may not be raised or caught in core modules; return a named
 result type instead.
+
+### LIT403
+
+`restricted-subclassing`: A class extends a base that is not on the allowlist.
+
+Inheritance couples a class to its parent's internals; prefer composition,
+functions over values, and `Protocol`s for shared interfaces. A class may
+extend a name in `conventions.allowed_bases` (default: every builtin, such
+as `Exception`, plus `typing.Protocol`/`NamedTuple`/`TypedDict`/`Generic`,
+`enum` bases, Pydantic `BaseModel`/`RootModel`/`BaseSettings`, and
+SQLAlchemy declarative bases and `TypeDecorator`), or a workspace class that
+directly extends one: a shared `Base(DeclarativeBase)` for tables, a common
+`Model(BaseModel)`, a `DomainError(Exception)`, or a `Protocol` a fake
+implements. Deeper hierarchies are reported, except for exceptions, which
+may nest to any depth. A table that extends a declarative base may also mix
+in plain workspace classes, such as a `ProjectOwned` holding shared columns.
+Entries ending in `.*` allow a whole module. Set `conventions.allowed_bases`
+to replace the list, or `conventions.extend_allowed_bases` to add to it.

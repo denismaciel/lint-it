@@ -87,6 +87,35 @@ OUTCOME_SUFFIXES = (
     "Unauthorized",
     "Unavailable",
 )
+# Bases a class may extend (LIT403). A trailing ".*" allows every name in a module.
+ALLOWED_BASES = frozenset(
+    {
+        "builtins.*",
+        "typing.Generic",
+        "typing.NamedTuple",
+        "typing.Protocol",
+        "typing.TypedDict",
+        "typing_extensions.Generic",
+        "typing_extensions.NamedTuple",
+        "typing_extensions.Protocol",
+        "typing_extensions.TypedDict",
+        "enum.Enum",
+        "enum.Flag",
+        "enum.IntEnum",
+        "enum.IntFlag",
+        "enum.StrEnum",
+        "pydantic.BaseModel",
+        "pydantic.RootModel",
+        "pydantic_settings.BaseSettings",
+        "sqlalchemy.TypeDecorator",
+        "sqlalchemy.types.TypeDecorator",
+        "sqlalchemy.ext.declarative.declarative_base",
+        "sqlalchemy.orm.DeclarativeBase",
+        "sqlalchemy.orm.DeclarativeBaseNoMeta",
+        "sqlalchemy.orm.MappedAsDataclass",
+        "sqlalchemy.orm.declarative_base",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -95,5 +124,6 @@ class Policy:
     forbidden_imports: Mapping[Layer, frozenset[str]] = FORBIDDEN_IMPORTS
     predicate_prefixes: tuple[str, ...] = PREDICATE_PREFIXES
     outcome_suffixes: tuple[str, ...] = OUTCOME_SUFFIXES
+    allowed_bases: frozenset[str] = ALLOWED_BASES
     effectful_types: frozenset[str] = frozenset()
     clock_modules: frozenset[str] = frozenset()

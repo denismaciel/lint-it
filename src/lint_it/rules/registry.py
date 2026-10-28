@@ -21,6 +21,7 @@ from lint_it.rules.nondeterminism import NondeterminismRule
 from lint_it.rules.outcomes import ExpectedOutcomeRule
 from lint_it.rules.policy_types import BooleanPolicyRule
 from lint_it.rules.routers import RouterConstructionRule
+from lint_it.rules.subclassing import SubclassingRule
 from lint_it.rules.transactions import TransactionBoundaryRule
 
 PARSE_ERROR = ParseErrorRule()
@@ -47,6 +48,7 @@ ALL_RULES: tuple[Rule, ...] = (
     ImmutableDefaultRule(),
     BooleanPolicyRule(),
     ExpectedOutcomeRule(),
+    SubclassingRule(),
 )
 
 RULES_BY_CODE: Mapping[str, Rule] = MappingProxyType({rule.code: rule for rule in ALL_RULES})
