@@ -1,5 +1,7 @@
-"""Built-in file layouts. Within a layout the last matching glob wins; the common
-patterns are appended to every layout, custom ones included."""
+"""Built-in file layouts. Within a layout the last matching glob wins. Every layout
+follows its own globs with the conventional patterns and ends with the package
+markers; a custom layout's globs come after the conventions, so they can
+reclassify tests, scripts or migrations, but never package markers."""
 
 from __future__ import annotations
 
@@ -13,21 +15,21 @@ from lint_it.policy import Layer
 @dataclass(frozen=True)
 class LayerPattern:
     glob: str
-    layer: Layer
+    layer: str
 
 
 def _patterns(*entries: tuple[str, Layer]) -> tuple[LayerPattern, ...]:
     return tuple(LayerPattern(glob, layer) for glob, layer in entries)
 
 
-COMMON = _patterns(
+CONVENTIONS = _patterns(
     ("conftest.py", Layer.TEST),
     ("tests/**/*.py", Layer.TEST),
     ("scripts/**/*.py", Layer.BOUNDARY),
     ("examples/**/*.py", Layer.BOUNDARY),
     ("migrations/**/*.py", Layer.TRANSACTION),
-    ("src/**/__init__.py", Layer.MARKER),
 )
+MARKERS = _patterns(("src/**/__init__.py", Layer.MARKER))
 
 _DOMAIN_SLICES = _patterns(
     ("src/*/domains/**/boundary.py", Layer.BOUNDARY),

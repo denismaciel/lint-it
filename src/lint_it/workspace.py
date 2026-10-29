@@ -16,8 +16,16 @@ from lint_it.config_values import (
     string_list,
 )
 from lint_it.globs import matches_glob
-from lint_it.layouts import BUILT_IN, COMMON, LayerPattern
-from lint_it.policy import FORBIDDEN_IMPORTS, LAYER_DEPENDENCIES, Layer, Policy
+from lint_it.layouts import BUILT_IN, CONVENTIONS, MARKERS, LayerPattern
+from lint_it.policy import (
+    FORBIDDEN_IMPORTS,
+    LAYER_DEPENDENCIES,
+    AllowedDependency,
+    CustomLayer,
+    Layer,
+    Policy,
+    matches_name,
+)
 
 DEFAULT_POLICY = Policy()
 MANIFEST = "lint-it.toml"
@@ -55,7 +63,7 @@ class Origin(StrEnum):
 @dataclass(frozen=True)
 class LayoutOverride:
     glob: str
-    layer: Layer
+    layer: str
     reason: str
     issue: str
 
@@ -80,10 +88,14 @@ class Package:
 
 @dataclass(frozen=True)
 class Classification:
+    """``layer`` decides which rules apply; ``name`` is the layer as configured,
+    which differs for a custom layer and keys its dependency policy."""
+
     package: Package
     layer: Layer
     origin: Origin
     glob: str
+    name: str
 
 
 @dataclass(frozen=True)
@@ -133,7 +145,7 @@ class Workspace:
         for source in self.sources:
             package = self._owner(source.path)
             packages[source.path] = package
-            classifications[source.path] = _classification(source.path, package)
+            classifications[source.path] = _classification(source.path, package, self.policy)
             sources.setdefault(source.path, source)
             module = source.module if source.module is not None else _module(source.path, package)
             if module is not None:
@@ -174,7 +186,7 @@ class Workspace:
         path = self.absolute(path)
         if path in self.index.classifications:
             return self.index.classifications[path]
-        return _classification(path, self.package_for(path))
+        return _classification(path, self.package_for(path), self.policy)
 
     def module_name(self, path: str | Path) -> str | None:
         path = self.absolute(path)
@@ -239,6 +251,13 @@ class Workspace:
                 f"layout override budget exceeded: {len(overridden)} files use overrides, "
                 f"budget is {self.override_budget}"
             )
+        modules = tuple(self.index.modules)
+        errors.extend(
+            f"allowed dependency matches no workspace module: {pattern}"
+            for item in self.policy.allowed_dependencies
+            for pattern in item.modules
+            if not any(matches_name(module, (pattern,)) for module in modules)
+        )
         dependency_overrides = sum(len(package.dependency_overrides) for package in self.packages)
         if dependency_overrides > self.dependency_override_budget:
             errors.append(
@@ -255,7 +274,7 @@ def _module(path: Path, package: Package | None) -> str | None:
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
-def _classification(path: Path, package: Package | None) -> Classification | None:
+def _classification(path: Path, package: Package | None, policy: Policy) -> Classification | None:
     if package is None:
         return None
     relative = path.relative_to(package.root).as_posix()
@@ -264,13 +283,17 @@ def _classification(path: Path, package: Package | None) -> Classification | Non
         return None
     if overrides:
         override = overrides[0]
-        return Classification(package, override.layer, Origin.OVERRIDE, override.glob)
+        return Classification(
+            package, policy.base(override.layer), Origin.OVERRIDE, override.glob, override.layer
+        )
     pattern = next(
         (item for item in reversed(package.layers) if matches_glob(relative, item.glob)), None
     )
     if pattern is None:
         return None
-    return Classification(package, pattern.layer, Origin.LAYOUT, pattern.glob)
+    return Classification(
+        package, policy.base(pattern.layer), Origin.LAYOUT, pattern.glob, pattern.layer
+    )
 
 
 def _python_glob(value: object, field: str) -> str:
@@ -324,8 +347,36 @@ def _tables(raw: Mapping[str, object], key: str) -> list[dict[str, object]]:
     return value
 
 
-def _layouts(raw: dict[str, object]) -> dict[str, tuple[LayerPattern, ...]]:
-    layouts = dict(BUILT_IN)
+def _layer(value: object, field: str, layers: tuple[str, ...]) -> str:
+    name = non_empty_string(value, field)
+    if name not in layers:
+        raise ValueError(f"{field} must be one of: {', '.join(layers)}; got {name!r}")
+    return name
+
+
+def _custom_layers(raw: dict[str, object]) -> dict[str, CustomLayer]:
+    layers: dict[str, CustomLayer] = {}
+    for name, entry in raw.items():
+        field = f"layers.{name}"
+        if name in tuple(Layer) or not name.replace("_", "").replace("-", "").isalnum():
+            raise ValueError(f"{field} must be a new layer name of letters, digits, - and _")
+        if not isinstance(entry, dict):
+            raise ValueError(f"{field} must be a table")
+        reject_unknown_keys(entry, frozenset({"base", "deterministic"}), field)
+        base = enum_value(Layer, entry.get("base"), f"{field}.base")
+        if base is Layer.MARKER:
+            raise ValueError(f"{field}.base cannot be marker")
+        deterministic = entry.get("deterministic", False)
+        if not isinstance(deterministic, bool):
+            raise ValueError(f"{field}.deterministic must be true or false")
+        layers[name] = CustomLayer(name, base, deterministic)
+    return layers
+
+
+def _layouts(
+    raw: dict[str, object], layer_names: tuple[str, ...]
+) -> dict[str, tuple[LayerPattern, ...]]:
+    layouts = {name: (*patterns, *CONVENTIONS) for name, patterns in BUILT_IN.items()}
     for name, entry in raw.items():
         if name in layouts or not isinstance(entry, dict):
             raise ValueError(f"layout {name} must be a table and cannot redefine a built-in")
@@ -337,7 +388,7 @@ def _layouts(raw: dict[str, object]) -> dict[str, tuple[LayerPattern, ...]]:
                 raise ValueError(
                     f"layouts.{name}.extends must be one of: {', '.join(BUILT_IN)}; got {parent!r}"
                 )
-            base = BUILT_IN[parent]
+            base = layouts[parent]
         entries = entry.get("layers")
         if not isinstance(entries, list) or not entries:
             raise ValueError(f"layouts.{name}.layers must be a non-empty array")
@@ -349,37 +400,93 @@ def _layouts(raw: dict[str, object]) -> dict[str, tuple[LayerPattern, ...]]:
             patterns.append(
                 LayerPattern(
                     _python_glob(layer_entry.get("glob"), f"layouts.{name}.layers.glob"),
-                    enum_value(Layer, layer_entry.get("layer"), f"layouts.{name}.layers.layer"),
+                    _layer(layer_entry.get("layer"), f"layouts.{name}.layers.layer", layer_names),
                 )
             )
-        layouts[name] = (*base, *patterns)
-    return {name: (*patterns, *COMMON) for name, patterns in layouts.items()}
+        layouts[name] = (*(base or CONVENTIONS), *patterns)
+    return {name: (*patterns, *MARKERS) for name, patterns in layouts.items()}
+
+
+def _inherited(
+    table: Mapping[str, frozenset[str]], explicit: set[str], custom: Mapping[str, CustomLayer]
+) -> dict[str, frozenset[str]]:
+    """``table`` with each custom layer given its base layer's entry unless named."""
+    return {
+        **table,
+        **{
+            layer.name: table[layer.base]
+            for layer in custom.values()
+            if layer.name not in explicit and layer.base in table
+        },
+    }
+
+
+def _allowed_dependencies(
+    raw: Mapping[str, object], layers: tuple[str, ...]
+) -> tuple[AllowedDependency, ...]:
+    allowances = []
+    for entry in _tables(raw, "allowed_dependencies"):
+        reject_unknown_keys(
+            entry, frozenset({"layers", "modules", "reason"}), "allowed_dependencies"
+        )
+        modules = _base_names(entry.get("modules"), "allowed_dependencies.modules")
+        if not modules:
+            raise ValueError("allowed_dependencies.modules must name at least one module")
+        allowances.append(
+            AllowedDependency(
+                modules=tuple(sorted(modules)),
+                layers=frozenset(
+                    _layer(item, "allowed_dependencies.layers", layers)
+                    for item in string_list(entry.get("layers", []), "allowed_dependencies.layers")
+                ),
+                reason=non_empty_string(entry.get("reason"), "allowed_dependencies.reason"),
+            )
+        )
+    return tuple(allowances)
 
 
 def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
+    custom = _custom_layers(_table(raw, "layers"))
+    layers = (*(layer.value for layer in Layer), *custom)
     dependencies = dict(LAYER_DEPENDENCIES)
+    named: set[str] = set()
     for name, value in _table(raw, "layer_dependencies").items():
-        layer = enum_value(Layer, name, "layer_dependencies key")
+        layer = _layer(name, "layer_dependencies key", layers)
+        named.add(layer)
         if value == "*":
             dependencies.pop(layer, None)
         else:
             dependencies[layer] = frozenset(
-                enum_value(Layer, item, f"layer_dependencies.{name}")
+                _layer(item, f"layer_dependencies.{name}", layers)
                 for item in string_list(value, f"layer_dependencies.{name}")
             )
+    dependencies = _inherited(dependencies, named, custom)
     forbidden = dict(FORBIDDEN_IMPORTS)
+    named = set()
     for name, value in _table(raw, "forbidden_imports").items():
-        layer = enum_value(Layer, name, "forbidden_imports key")
+        layer = _layer(name, "forbidden_imports key", layers)
+        named.add(layer)
         forbidden[layer] = _qualified_names(value, f"forbidden_imports.{name}")
-    for name, value in _table(raw, "extend_forbidden_imports").items():
-        extra = _qualified_names(value, f"extend_forbidden_imports.{name}")
-        layers = (
-            tuple(Layer)
-            if name == "*"
-            else (enum_value(Layer, name, "extend_forbidden_imports key"),)
+    extensions = {
+        name if name == "*" else _layer(name, "extend_forbidden_imports key", layers): (
+            _qualified_names(value, f"extend_forbidden_imports.{name}")
         )
-        for layer in layers:
+        for name, value in _table(raw, "extend_forbidden_imports").items()
+    }
+    for layer in tuple(Layer) + tuple(name for name in custom if name in named):
+        extra = extensions.get("*", frozenset()) | extensions.get(layer, frozenset())
+        if extra:
             forbidden[layer] = forbidden.get(layer, frozenset()) | extra
+    forbidden = _inherited(forbidden, named, custom)
+    for name in custom:
+        if name not in named and name in extensions:
+            forbidden[name] = forbidden.get(name, frozenset()) | extensions[name]
+    calls: dict[str, frozenset[str]] = {}
+    for name, value in _table(raw, "forbidden_calls").items():
+        calls[_layer(name, "forbidden_calls key", layers)] = _base_names(
+            value, f"forbidden_calls.{name}"
+        )
+    calls = _inherited(calls, set(calls), custom)
     conventions = _table(raw, "conventions")
     reject_unknown_keys(
         conventions,
@@ -397,6 +504,9 @@ def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
     return Policy(
         layer_dependencies=MappingProxyType(dependencies),
         forbidden_imports=MappingProxyType(forbidden),
+        forbidden_calls=MappingProxyType(calls),
+        custom_layers=MappingProxyType(custom),
+        allowed_dependencies=_allowed_dependencies(raw, layers),
         predicate_prefixes=tuple(
             string_list(conventions["predicate_prefixes"], "conventions.predicate_prefixes")
         )
@@ -430,10 +540,13 @@ def load_manifest(
             {
                 "workspace",
                 "packages",
+                "layers",
                 "layouts",
                 "layer_dependencies",
                 "forbidden_imports",
                 "extend_forbidden_imports",
+                "forbidden_calls",
+                "allowed_dependencies",
                 "conventions",
                 "overrides",
                 "dependency_overrides",
@@ -458,7 +571,9 @@ def load_manifest(
     )
     if not project_roots:
         raise ValueError(f"no pyproject.toml found under {root}")
-    layouts = _layouts(_table(raw, "layouts"))
+    policy = _policy(raw, workspace)
+    layer_names = (*(layer.value for layer in Layer), *policy.custom_layers)
+    layouts = _layouts(_table(raw, "layouts"), layer_names)
     default_kind = enum_value(Kind, workspace.get("kind", "server"), "workspace.kind")
     default_layout = _layout_name(workspace.get("layout", "domains"), "workspace.layout", layouts)
 
@@ -484,7 +599,7 @@ def load_manifest(
         overrides.setdefault(package_root, []).append(
             LayoutOverride(
                 glob=_override_glob(entry.get("glob")),
-                layer=enum_value(Layer, entry.get("layer"), "overrides.layer"),
+                layer=_layer(entry.get("layer"), "overrides.layer", layer_names),
                 reason=non_empty_string(entry.get("reason"), "overrides.reason"),
                 issue=non_empty_string(entry.get("issue"), "overrides.issue"),
             )
@@ -523,7 +638,7 @@ def load_manifest(
     return Workspace(
         root=root,
         packages=tuple(packages),
-        policy=_policy(raw, workspace),
+        policy=policy,
         manifest=manifest,
         override_budget=non_negative_int(
             workspace.get("override_budget", 0), "workspace.override_budget"

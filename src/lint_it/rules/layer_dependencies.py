@@ -14,19 +14,23 @@ class LayerDependencyRule:
     The allowed targets per layer come from `[layer_dependencies]`; by default
     core and port import only core and port, shell adds shell, adapter adds
     adapter, and routers import shell, boundary, router and transaction modules.
-    Other layers are unrestricted. Imports are followed through package
-    `__init__` modules and re-exports, so a package initializer cannot launder a
-    forbidden dependency. Each forbidden module is reported once per importer.
-    Record a deliberate exception with `[[dependency_overrides]]`.
+    Other layers are unrestricted. A custom layer uses its base layer's entry
+    unless it has its own, and counts as its base layer when imported. Imports
+    are followed through package `__init__` modules and re-exports, so a package
+    initializer cannot launder a forbidden dependency. Each forbidden module is
+    reported once per importer. Declare modules a layer may always use with
+    `[[allowed_dependencies]]`, or record one deliberate edge with
+    `[[dependency_overrides]]`.
     """
 
     code = "LIT101"
     name = "layer-dependency"
 
     def check(self, file: SourceFile) -> Iterable[Finding]:
-        workspace, layer = file.workspace, file.layer
-        allowed = workspace.policy.layer_dependencies.get(layer) if layer else None
-        if allowed is None or file.package is None:
+        workspace, layer = file.workspace, file.layer_name
+        policy = workspace.policy
+        allowed = policy.layer_dependencies.get(layer) if layer else None
+        if layer is None or allowed is None or file.package is None:
             return []
         index = workspace.index
         findings: list[Finding] = []
@@ -34,12 +38,14 @@ class LayerDependencyRule:
         for node, imported, symbol in module_imports(file.tree, file.package):
             for target in loaded_sources(imported, symbol, index.modules, index.module_names):
                 classification = workspace.classify(target.path)
+                module = index.module_names.get(target.path, target.path.name)
                 if (
                     classification is None
                     or target.path in seen
                     or target.path == file.path
-                    or classification.layer in allowed
+                    or policy.is_a(classification.name, allowed)
                     or classification.layer is Layer.MARKER
+                    or policy.allows_dependency(layer, module)
                     or workspace.dependency_override_for(file.path, target.path) is not None
                 ):
                     continue
@@ -49,8 +55,8 @@ class LayerDependencyRule:
                         self,
                         file,
                         node,
-                        f"{layer} cannot import {classification.layer} module "
-                        f"{index.module_names.get(target.path, target.path.name)}",
+                        f"{layer} cannot import {classification.name} module {module}",
+                        target=module,
                     )
                 )
         return findings

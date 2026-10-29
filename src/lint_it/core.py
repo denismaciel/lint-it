@@ -16,11 +16,14 @@ from lint_it.workspace import Classification, Workspace
 
 @dataclass(frozen=True)
 class Finding:
+    """``target`` names what a dependency finding is about: a module, package or call."""
+
     filename: str
     line: int
     column: int
     code: str
     message: str
+    target: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,16 @@ class SourceFile:
     @cached_property
     def layer(self) -> Layer | None:
         return None if self.classification is None else self.classification.layer
+
+    @cached_property
+    def layer_name(self) -> str | None:
+        """The configured layer, which names a custom layer where ``layer`` is its base."""
+        return None if self.classification is None else self.classification.name
+
+    @cached_property
+    def is_deterministic(self) -> bool:
+        custom = self.workspace.policy.custom_layers.get(self.layer_name or "")
+        return custom is not None and custom.deterministic
 
     def has_layer(self, *layers: Layer) -> bool:
         return self.layer in layers
@@ -81,13 +94,16 @@ def relative_name(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
 
 
-def finding(rule: Rule, file: SourceFile, node: ast.AST, message: str) -> Finding:
+def finding(
+    rule: Rule, file: SourceFile, node: ast.AST, message: str, target: str | None = None
+) -> Finding:
     return Finding(
         filename=file.filename,
         line=getattr(node, "lineno", 1),
         column=getattr(node, "col_offset", 0),
         code=rule.code,
         message=message,
+        target=target,
     )
 
 

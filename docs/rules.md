@@ -22,6 +22,7 @@
 | [LIT303](#lit303) | `router-construction` | A router constructs its own infrastructure. |
 | [LIT304](#lit304) | `mocking` | A test patches code instead of passing fakes in. |
 | [LIT305](#lit305) | `immutable-defaults` | A parameter default is not an immutable literal. |
+| [LIT306](#lit306) | `forbidden-call` | A module calls a function its layer may not call. |
 | [LIT401](#lit401) | `boolean-policy` | A public core function takes a boolean, or returns one without a predicate name. |
 | [LIT402](#lit402) | `expected-outcome` | Core code raises or catches an expected outcome. |
 | [LIT403](#lit403) | `restricted-subclassing` | A class extends a base that is not on the allowlist. |
@@ -65,10 +66,13 @@ What each layer and package may import.
 The allowed targets per layer come from `[layer_dependencies]`; by default
 core and port import only core and port, shell adds shell, adapter adds
 adapter, and routers import shell, boundary, router and transaction modules.
-Other layers are unrestricted. Imports are followed through package
-`__init__` modules and re-exports, so a package initializer cannot launder a
-forbidden dependency. Each forbidden module is reported once per importer.
-Record a deliberate exception with `[[dependency_overrides]]`.
+Other layers are unrestricted. A custom layer uses its base layer's entry
+unless it has its own, and counts as its base layer when imported. Imports
+are followed through package `__init__` modules and re-exports, so a package
+initializer cannot launder a forbidden dependency. Each forbidden module is
+reported once per importer. Declare modules a layer may always use with
+`[[allowed_dependencies]]`, or record one deliberate edge with
+`[[dependency_overrides]]`.
 
 ### LIT102
 
@@ -103,7 +107,9 @@ Core and port modules may not read any nondeterministic source (`time`,
 `datetime.now`, `uuid4`, `random`, `secrets`, `os.urandom`); pass the
 observed value in. Elsewhere only wall-clock reads are reported, so time
 flows through one clock you can control in tests. List that clock's modules
-in `workspace.clock_modules`; test modules are exempt.
+in `workspace.clock_modules`; test modules are exempt. A custom layer with
+`deterministic = true`, such as Temporal workflow code, is held to the core
+standard.
 
 ### LIT202
 
@@ -208,6 +214,17 @@ only be constants, signed numbers, and tuples of those. A default such as
 `[]`, `Settings()` or `datetime.now()` is evaluated once at import time and
 hides a dependency; make the caller pass it. Protocol methods and exception
 `__init__` methods are exempt.
+
+### LIT306
+
+`forbidden-call`: A module calls a function its layer may not call.
+
+Nothing is forbidden by default. List qualified names per layer in
+`[forbidden_calls]`, with a trailing `.*` for a whole module: for example
+`time.sleep` and `asyncio.sleep` in Temporal workflow code, which must use
+the workflow's own timer. Calls are matched by resolved name, so aliases
+and `from` imports count. A custom layer inherits its base layer's list
+unless it has its own.
 
 ## Conventions
 

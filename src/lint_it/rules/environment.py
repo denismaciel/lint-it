@@ -28,7 +28,7 @@ class EnvironmentAccessRule:
                 self,
                 file,
                 node,
-                f"{file.layer} modules cannot read the environment; "
+                f"{file.layer_name} modules cannot read the environment; "
                 "read configuration at a boundary and pass it in",
             )
             for node, names in loaded_names(file)

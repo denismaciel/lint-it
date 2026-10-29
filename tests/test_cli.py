@@ -64,6 +64,7 @@ def test_json_output_is_findings_and_summary(
                 "column": 0,
                 "code": "LIT102",
                 "message": "core modules cannot import httpx",
+                "target": "httpx",
             }
         ],
         "summary": {"findings": 1, "packages": 1, "files": 1},

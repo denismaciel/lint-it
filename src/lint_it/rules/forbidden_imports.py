@@ -63,7 +63,7 @@ class ForbiddenImportRule:
     name = "forbidden-import"
 
     def check(self, file: SourceFile) -> Iterable[Finding]:
-        layer = file.layer
+        layer = file.layer_name
         forbidden = file.workspace.policy.forbidden_imports.get(layer) if layer else None
         if not forbidden:
             return []
@@ -85,6 +85,7 @@ class ForbiddenImportRule:
                         file,
                         node,
                         f"{layer} modules cannot import {', '.join(sorted(reached))}",
+                        target=", ".join(sorted(reached)),
                     )
                 )
         return findings

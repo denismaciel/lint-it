@@ -77,7 +77,12 @@ def describe(path: str, classification: Classification | None, layout: str | Non
     if classification is None:
         return f"{path}: unclassified ({layout} layout)"
     source = "override" if classification.origin is Origin.OVERRIDE else f"{layout} layout"
-    return f"{path}: {classification.layer} ({source}, {classification.glob})"
+    layer = (
+        classification.name
+        if classification.name == classification.layer
+        else f"{classification.name} (a {classification.layer})"
+    )
+    return f"{path}: {layer} ({source}, {classification.glob})"
 
 
 def explain(rule: Rule) -> str:

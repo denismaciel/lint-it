@@ -11,6 +11,7 @@ from lint_it.rules.capabilities import EffectfulCapabilityRule
 from lint_it.rules.client_imports import ClientImportRule
 from lint_it.rules.defaults import ImmutableDefaultRule
 from lint_it.rules.environment import EnvironmentAccessRule
+from lint_it.rules.forbidden_calls import ForbiddenCallRule
 from lint_it.rules.forbidden_imports import ForbiddenImportRule
 from lint_it.rules.frozen_values import FrozenValueRule
 from lint_it.rules.io_calls import IoCallRule
@@ -46,6 +47,7 @@ ALL_RULES: tuple[Rule, ...] = (
     RouterConstructionRule(),
     MockingRule(),
     ImmutableDefaultRule(),
+    ForbiddenCallRule(),
     BooleanPolicyRule(),
     ExpectedOutcomeRule(),
     SubclassingRule(),
