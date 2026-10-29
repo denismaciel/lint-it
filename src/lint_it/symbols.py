@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import warnings
 from collections.abc import Mapping
 from functools import cache
 from types import MappingProxyType
@@ -9,6 +10,8 @@ from types import MappingProxyType
 from lint_it.imports import absolute_module
 
 UNKNOWN = frozenset({"?"})
+# Longer strings are prose, not forward references.
+MAX_ANNOTATION = 200
 BUILTIN_CLASSES = frozenset(
     name for name, value in vars(builtins).items() if isinstance(value, type)
 )
@@ -136,10 +139,7 @@ class _Resolver(ast.NodeVisitor):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             return self.names(node.left)
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            try:
-                return self.names(ast.parse(node.value, mode="eval").body)
-            except SyntaxError:
-                return UNKNOWN
+            return self.names(expression) if (expression := _annotation(node.value)) else UNKNOWN
         return UNKNOWN
 
     def visit(self, node: ast.AST) -> None:
@@ -337,6 +337,17 @@ class _Resolver(ast.NodeVisitor):
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
         self.comprehension(node)
+
+
+def _annotation(text: str) -> ast.expr | None:
+    """The expression a string forward reference spells, if it can be one."""
+    if "\n" in text or len(text) > MAX_ANNOTATION:
+        return None
+    with warnings.catch_warnings(action="ignore"):
+        try:
+            return ast.parse(text, mode="eval").body
+        except (SyntaxError, ValueError, UnicodeError):
+            return None
 
 
 def resolved_symbols(

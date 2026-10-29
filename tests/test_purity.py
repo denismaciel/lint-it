@@ -387,3 +387,9 @@ def test_lit207_does_not_mutate_the_snapshot(project: Project) -> None:
 
     assert engine.check(workspace, [EffectfulCapabilityRule()])
     assert ast.dump(workspace.sources[0].tree) == before
+
+
+def test_strings_that_cannot_be_annotations_do_not_break_resolution(project: Project) -> None:
+    source = 'SURROGATE = "\\ud800"\nOCTAL = "1_a"\nPROSE = """line\nline"""\n'
+
+    assert project.lint("src/example/domains/orders/core.py", source) == []
