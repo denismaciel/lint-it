@@ -49,7 +49,11 @@ class RouterConstructionRule:
             ):
                 findings.append(
                     finding(
-                        self, file, node, f"routers cannot construct {', '.join(sorted(names))}"
+                        self,
+                        file,
+                        node,
+                        f"routers cannot construct {', '.join(sorted(names))}",
+                        target=", ".join(sorted(names)),
                     )
                 )
         return findings

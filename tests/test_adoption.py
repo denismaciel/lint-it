@@ -225,3 +225,19 @@ def test_report_text_lists_each_section(
     assert output.startswith("1 finding: 1 new, 0 baselined (0 ignored)\n\nBy rule\n  LIT102")
     assert "Top targets\n       1  LIT102 httpx" in output
     assert "Top areas\n       1  src/example/domains" in output
+
+
+def test_report_can_focus_on_one_rule(project: Project, capsys: pytest.CaptureFixture[str]) -> None:
+    project.write(
+        {
+            CORE: "import httpx\n",
+            "src/example/domains/orders/model.py": "class Base(dict): ...\nclass Mid(Base): ...\n"
+            "class Leaf(Mid): ...\n",
+        }
+    )
+
+    assert run(project, "report", "--rule", "restricted-subclassing", "--format", "json") == 0
+    stats = json.loads(capsys.readouterr().out)
+    assert [item["code"] for item in stats["rules"]] == ["LIT403"]
+    assert stats["targets"] == [{"label": "LIT403 example.domains.orders.model.Mid", "findings": 1}]
+    assert run(project, "report", "--rule", "LIT999") == 2

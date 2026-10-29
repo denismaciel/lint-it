@@ -28,6 +28,7 @@ class IoCallRule:
                 file,
                 node,
                 f"{', '.join(sorted(names))} performs I/O; pass its result into the core",
+                target=", ".join(sorted(names)),
             )
             for node, names in loaded_names(file)
             if all(is_io(name) for name in names)

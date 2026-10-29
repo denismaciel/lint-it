@@ -24,7 +24,9 @@ class ClientImportRule:
             return []
         server_modules = file.workspace.index.server_modules
         return [
-            finding(self, file, node, f"client packages cannot import server module {module}")
+            finding(
+                self, file, node, f"client packages cannot import server module {module}", module
+            )
             for node, module in imported_modules(file.tree)
             if module.split(".")[0] in server_modules
         ]

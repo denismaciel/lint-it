@@ -41,6 +41,7 @@ class NondeterminismRule:
                 if inner
                 else f"{', '.join(sorted(names))} reads wall time directly; "
                 "use the clock listed in workspace.clock_modules",
+                target=", ".join(sorted(names)),
             )
             for node, names in loaded_names(file)
             if all(is_nondeterministic(name) if inner else name in WALL_CLOCK for name in names)

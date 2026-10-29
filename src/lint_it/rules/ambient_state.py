@@ -47,6 +47,7 @@ class AmbientStateRule:
                 node,
                 f"{', '.join(sorted(names))} uses ambient state; "
                 "pass an explicit value or policy into the core",
+                target=", ".join(sorted(names)),
             )
             for node, names in loaded_names(file)
             if all(is_ambient(name) for name in names)

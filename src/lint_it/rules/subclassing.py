@@ -211,6 +211,8 @@ class SubclassingRule:
                 else:
                     rejected.append((base, described))
             for base, described in rejected if declarative else rejected + mixins:
+                names = scope.symbols.get(base, UNKNOWN)
+                local = ast.unparse(base)
                 findings.append(
                     finding(
                         self,
@@ -219,6 +221,11 @@ class SubclassingRule:
                         f"'{node.name}' extends {described}, which is not an allowed base; "
                         "compose, or implement a Protocol "
                         "(extend conventions.allowed_bases for framework bases)",
+                        target=", ".join(sorted(names))
+                        if names != UNKNOWN
+                        else f"{file.module}.{local}"
+                        if file.module
+                        else local,
                     )
                 )
         return findings

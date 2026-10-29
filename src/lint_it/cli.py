@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from lint_it import baseline, engine, parallel, reporting
-from lint_it.core import Finding, relative_name
+from lint_it.core import Finding, Rule, relative_name
 from lint_it.layouts import BUILT_IN
 from lint_it.loader import ManifestError, find_root, load_workspace
 from lint_it.reporting import Format
@@ -71,6 +71,9 @@ def _parser() -> argparse.ArgumentParser:
         choices=(Format.TEXT, Format.JSON),
         default=Format.TEXT,
         dest="output",
+    )
+    report.add_argument(
+        "--rule", action="append", default=[], help="only this rule (code or name); repeatable"
     )
     report.add_argument("--jobs", type=int)
 
@@ -179,16 +182,32 @@ def _report(args: argparse.Namespace) -> int:
     if isinstance(selected, str):
         print(f"lint-it: {selected}", file=sys.stderr)
         return 2
+    rules = [_rule(name) for name in args.rule]
+    if None in rules:
+        print("lint-it: unknown rule; run `lint-it rules`", file=sys.stderr)
+        return 2
     result = engine.run(workspace, ALL_RULES, selected, parallel.checker(args.jobs))
+    if rules:
+        codes = {rule.code for rule in rules if rule is not None}
+        result = replace(
+            result,
+            findings=tuple(item for item in result.findings if item.code in codes),
+            baselined=tuple(item for item in result.baselined if item.code in codes),
+            ignored=tuple(item for item in result.ignored if item.code in codes),
+        )
     stats = reporting.statistics(result, workspace, ALL_RULES, top=args.top, depth=args.depth)
     print(reporting.render_statistics(stats, args.output))
     return 0
 
 
-def _explain(args: argparse.Namespace) -> int:
-    rule = RULES_BY_CODE.get(args.code.upper()) or next(
-        (rule for rule in ALL_RULES if rule.name == args.code), None
+def _rule(name: str) -> Rule | None:
+    return RULES_BY_CODE.get(name.upper()) or next(
+        (rule for rule in ALL_RULES if rule.name == name), None
     )
+
+
+def _explain(args: argparse.Namespace) -> int:
+    rule = _rule(args.code)
     if rule is None:
         print(f"lint-it: unknown rule {args.code}; run `lint-it rules`", file=sys.stderr)
         return 2
