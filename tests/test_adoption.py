@@ -241,3 +241,16 @@ def test_report_can_focus_on_one_rule(project: Project, capsys: pytest.CaptureFi
     assert [item["code"] for item in stats["rules"]] == ["LIT403"]
     assert stats["targets"] == [{"label": "LIT403 example.domains.orders.model.Mid", "findings": 1}]
     assert run(project, "report", "--rule", "LIT999") == 2
+
+
+def test_rendered_baseline_round_trips_one_entry_per_line() -> None:
+    counts = {
+        ("src/b.py", "LIT102", 'core modules cannot import "x"'): 2,
+        ("src/a.py", "LIT101", "café"): 1,
+        ("src/a.py", "LIT201", "gone"): 0,
+    }
+    text = baseline.render(counts)
+
+    assert baseline.parse(text).counts == {key: count for key, count in counts.items() if count}
+    assert text.splitlines()[4] == '      {"code": "LIT101", "message": "café", "count": 1}'
+    assert baseline.parse(baseline.render({})).counts == {}

@@ -56,10 +56,17 @@ def parse(text: str) -> Baseline:
 
 
 def render(counts: Mapping[Key, int]) -> str:
-    files: dict[str, list[dict[str, object]]] = {}
+    """One entry per line, so a fixed finding is a one-line diff."""
+    files: dict[str, list[str]] = {}
     for (filename, code, message), count in sorted(counts.items()):
         if count > 0:
-            files.setdefault(filename, []).append(
-                {"code": code, "message": message, "count": count}
-            )
-    return json.dumps({"version": VERSION, "findings": files}, indent=2) + "\n"
+            entry = {"code": code, "message": message, "count": count}
+            files.setdefault(filename, []).append(json.dumps(entry, ensure_ascii=False))
+    blocks = [
+        f"    {json.dumps(filename, ensure_ascii=False)}: [\n      "
+        + ",\n      ".join(entries)
+        + "\n    ]"
+        for filename, entries in files.items()
+    ]
+    body = "{\n" + ",\n".join(blocks) + "\n  }" if blocks else "{}"
+    return f'{{\n  "version": {VERSION},\n  "findings": {body}\n}}\n'
