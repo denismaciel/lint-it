@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import gc
 import sys
+from collections import Counter
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
-from lint_it import engine, parallel, reporting
+from lint_it import baseline, engine, parallel, reporting
 from lint_it.core import Finding, relative_name
 from lint_it.layouts import BUILT_IN
 from lint_it.loader import ManifestError, find_root, load_workspace
@@ -43,6 +45,34 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--jobs", type=int, help="worker processes (default: one per CPU; 1 checks in-process)"
     )
+    check.add_argument(
+        "--no-baseline", action="store_true", help="report findings the baseline lists, too"
+    )
+
+    baseline = commands.add_parser(
+        "baseline", help="record current findings in the baseline file (workspace.baseline)"
+    )
+    baseline.add_argument("--root", type=Path)
+    baseline.add_argument(
+        "--prune", action="store_true", help="only drop entries that no longer match; never add"
+    )
+    baseline.add_argument("--jobs", type=int)
+
+    report = commands.add_parser("report", help="summarize where findings are")
+    report.add_argument("paths", nargs="*", type=Path)
+    report.add_argument("--root", type=Path)
+    report.add_argument("--top", type=int, default=15, help="rows per ranking (default 15)")
+    report.add_argument(
+        "--depth", type=int, default=3, help="directory levels per area (default 3)"
+    )
+    report.add_argument(
+        "--format",
+        type=Format,
+        choices=(Format.TEXT, Format.JSON),
+        default=Format.TEXT,
+        dest="output",
+    )
+    report.add_argument("--jobs", type=int)
 
     explain = commands.add_parser("explain", help="show the documentation for a rule")
     explain.add_argument("code", help="rule code or name, e.g. LIT101 or layer-dependency")
@@ -90,14 +120,69 @@ def _check(args: argparse.Namespace) -> int:
     if isinstance(selected, str):
         print(f"lint-it: {selected}", file=sys.stderr)
         return 2
-    findings = engine.check(workspace, ALL_RULES, selected, parallel.checker(args.jobs))
+    if args.no_baseline:
+        workspace = replace(workspace, baseline_path=None)
+    result = engine.run(workspace, ALL_RULES, selected, parallel.checker(args.jobs))
     files = len(workspace.sources) + len(workspace.parse_failures)
-    output = reporting.report(
-        findings, reporting.Summary(len(workspace.packages), files), args.output
+    totals = reporting.Summary(
+        len(workspace.packages), files, len(result.baselined), len(result.ignored)
     )
+    output = reporting.report(result.findings, totals, args.output)
     if output:
         print(output)
-    return 1 if findings else 0
+    return 1 if result.findings else 0
+
+
+def _baseline(args: argparse.Namespace) -> int:
+    workspace = _load(args.root, Format.TEXT)
+    if workspace is None:
+        return 2
+    path = workspace.baseline_path
+    if path is None:
+        print(
+            "lint-it: set workspace.baseline in lint-it.toml, e.g. "
+            'baseline = "lint-it-baseline.json"',
+            file=sys.stderr,
+        )
+        return 2
+    result = engine.run(
+        replace(workspace, baseline_path=None), ALL_RULES, (), parallel.checker(args.jobs)
+    )
+    problems = [item for item in result.findings if item.code in engine.UNSUPPRESSIBLE]
+    actual = Counter(
+        engine.key(item) for item in result.findings if item.code not in engine.UNSUPPRESSIBLE
+    )
+    previous = workspace.baseline.counts
+    counts = (
+        {key: min(count, actual[key]) for key, count in previous.items()}
+        if args.prune
+        else dict(actual)
+    )
+    path.write_text(baseline.render(counts), encoding="utf-8")
+    recorded = sum(counts.values())
+    files = len({filename for (filename, _, _), count in counts.items() if count})
+    print(
+        f"wrote {relative_name(path, workspace.root)}: {recorded} findings in {files} files "
+        f"(was {workspace.baseline.size})"
+    )
+    if problems:
+        print(reporting.report(problems, None, Format.TEXT), file=sys.stderr)
+        return 1
+    return 0
+
+
+def _report(args: argparse.Namespace) -> int:
+    workspace = _load(args.root, args.output)
+    if workspace is None:
+        return 2
+    selected = _selected(args.paths, workspace)
+    if isinstance(selected, str):
+        print(f"lint-it: {selected}", file=sys.stderr)
+        return 2
+    result = engine.run(workspace, ALL_RULES, selected, parallel.checker(args.jobs))
+    stats = reporting.statistics(result, workspace, ALL_RULES, top=args.top, depth=args.depth)
+    print(reporting.render_statistics(stats, args.output))
+    return 0
 
 
 def _explain(args: argparse.Namespace) -> int:
@@ -161,6 +246,8 @@ def _rules(args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "check": _check,
+    "baseline": _baseline,
+    "report": _report,
     "explain": _explain,
     "classify": _classify,
     "init": _init,

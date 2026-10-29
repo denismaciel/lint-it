@@ -7,6 +7,8 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 
+from lint_it.baseline import EMPTY as EMPTY_BASELINE
+from lint_it.baseline import Baseline
 from lint_it.config_values import (
     enum_value,
     non_empty_string,
@@ -77,6 +79,18 @@ class DependencyOverride:
 
 
 @dataclass(frozen=True)
+class Ignore:
+    """Rules switched off for files matching ``paths`` and ``layers`` (all when empty).
+
+    ``rules`` holds codes or names as written; the engine resolves them."""
+
+    rules: tuple[str, ...]
+    paths: tuple[str, ...]
+    layers: frozenset[str]
+    reason: str
+
+
+@dataclass(frozen=True)
 class Package:
     root: Path
     kind: Kind
@@ -135,6 +149,9 @@ class Workspace:
     parse_failures: tuple[ParseFailure, ...] = ()
     override_budget: int = 0
     dependency_override_budget: int = 0
+    ignores: tuple[Ignore, ...] = ()
+    baseline_path: Path | None = None
+    baseline: Baseline = EMPTY_BASELINE
     index: WorkspaceIndex = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -547,6 +564,7 @@ def load_manifest(
                 "extend_forbidden_imports",
                 "forbidden_calls",
                 "allowed_dependencies",
+                "ignore",
                 "conventions",
                 "overrides",
                 "dependency_overrides",
@@ -565,6 +583,7 @@ def load_manifest(
                 "clock_modules",
                 "override_budget",
                 "dependency_override_budget",
+                "baseline",
             }
         ),
         "workspace",
@@ -646,7 +665,35 @@ def load_manifest(
         dependency_override_budget=non_negative_int(
             workspace.get("dependency_override_budget", 0), "workspace.dependency_override_budget"
         ),
+        ignores=_ignores(raw, layer_names),
+        baseline_path=root / relative_path(workspace["baseline"], "workspace.baseline")
+        if "baseline" in workspace
+        else None,
     )
+
+
+def _ignores(raw: Mapping[str, object], layers: tuple[str, ...]) -> tuple[Ignore, ...]:
+    ignores = []
+    for entry in _tables(raw, "ignore"):
+        reject_unknown_keys(entry, frozenset({"rules", "paths", "layers", "reason"}), "ignore")
+        rules = string_list(entry.get("rules"), "ignore.rules")
+        if not rules:
+            raise ValueError("ignore.rules must name at least one rule")
+        ignores.append(
+            Ignore(
+                rules=tuple(rules),
+                paths=tuple(
+                    relative_path(item, "ignore.paths")
+                    for item in string_list(entry.get("paths", []), "ignore.paths")
+                ),
+                layers=frozenset(
+                    _layer(item, "ignore.layers", layers)
+                    for item in string_list(entry.get("layers", []), "ignore.layers")
+                ),
+                reason=non_empty_string(entry.get("reason"), "ignore.reason"),
+            )
+        )
+    return tuple(ignores)
 
 
 def _layout_name(value: object, field: str, layouts: Mapping[str, object]) -> str:

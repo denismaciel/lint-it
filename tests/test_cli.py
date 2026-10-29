@@ -67,7 +67,7 @@ def test_json_output_is_findings_and_summary(
                 "target": "httpx",
             }
         ],
-        "summary": {"findings": 1, "packages": 1, "files": 1},
+        "summary": {"findings": 1, "packages": 1, "files": 1, "baselined": 0, "ignored": 0},
     }
 
 

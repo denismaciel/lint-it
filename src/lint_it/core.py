@@ -119,5 +119,13 @@ def loaded_names(file: SourceFile) -> Iterable[tuple[ast.expr, frozenset[str]]]:
 def sort_findings(findings: Iterable[Finding]) -> list[Finding]:
     """Ordered and deduplicated: an alias and its attribute can resolve to the same finding."""
     return sorted(
-        set(findings), key=lambda item: (item.filename, item.line, item.column, item.code)
+        set(findings),
+        key=lambda item: (
+            item.filename,
+            item.line,
+            item.column,
+            item.code,
+            item.message,
+            item.target or "",
+        ),
     )

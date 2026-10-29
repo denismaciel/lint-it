@@ -8,6 +8,7 @@ extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor"]
 [layouts.lint-it]
 extends = "flat"
 layers = [
+  { glob = "src/*/baseline.py", layer = "core" },
   { glob = "src/*/config_values.py", layer = "core" },
   { glob = "src/*/engine.py", layer = "core" },
   { glob = "src/*/globs.py", layer = "core" },

@@ -5,6 +5,7 @@ import tomllib
 from dataclasses import replace
 from pathlib import Path
 
+from lint_it import baseline
 from lint_it.workspace import (
     IGNORED_DIRECTORIES,
     MANIFEST,
@@ -49,6 +50,11 @@ def load_workspace(root: Path) -> Workspace:
             frozenset(path.parent for path in _walk(root, "pyproject.toml")),
             manifest if manifest.is_file() else None,
         )
+        if workspace.baseline_path is not None and workspace.baseline_path.is_file():
+            workspace = replace(
+                workspace,
+                baseline=baseline.parse(workspace.baseline_path.read_text(encoding="utf-8")),
+            )
     except ValueError as error:
         raise ManifestError(str(error)) from error
     sources: list[Source] = []

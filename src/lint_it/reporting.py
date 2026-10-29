@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from enum import StrEnum
+from pathlib import Path, PurePosixPath
 
 from lint_it.core import Finding, Rule, documentation, summary
-from lint_it.workspace import Classification, Origin
+from lint_it.engine import Result
+from lint_it.workspace import Classification, Origin, Workspace
 
 FAMILIES = (
     ("0", "Workspace", "The workspace itself: files that cannot be parsed or classified."),
@@ -27,6 +30,8 @@ class Format(StrEnum):
 class Summary:
     packages: int
     files: int
+    baselined: int = 0
+    ignored: int = 0
 
 
 def _plural(count: int, noun: str) -> str:
@@ -62,11 +67,18 @@ def report(findings: Sequence[Finding], totals: Summary | None, output: Format) 
     if totals is None:
         return "\n".join(lines)
     files = len({item.filename for item in findings})
-    checked = f"{_plural(totals.files, 'file')} in {_plural(totals.packages, 'package')}"
+    checked = f"{_plural(totals.files, 'file')} in {_plural(totals.packages, 'package')} checked"
+    suppressed = [
+        f"{count} {label}"
+        for count, label in ((totals.baselined, "baselined"), (totals.ignored, "ignored"))
+        if count
+    ]
+    if suppressed:
+        checked += f"; {', '.join(suppressed)}"
     lines.append(
-        f"{_plural(len(findings), 'finding')} in {_plural(files, 'file')} ({checked} checked)"
+        f"{_plural(len(findings), 'finding')} in {_plural(files, 'file')} ({checked})"
         if findings
-        else f"No findings ({checked} checked)"
+        else f"No findings ({checked})"
     )
     return "\n".join(lines)
 
@@ -117,3 +129,104 @@ def rule_reference(rules: Sequence[Rule]) -> str:
             if body:
                 lines.extend(("", body))
     return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class RuleCount:
+    code: str
+    name: str
+    findings: int
+    new: int
+    files: int
+
+
+@dataclass(frozen=True)
+class Count:
+    label: str
+    findings: int
+
+
+@dataclass(frozen=True)
+class Statistics:
+    """Where the findings are: per rule, per layer edge, per target and per area."""
+
+    findings: int
+    new: int
+    baselined: int
+    ignored: int
+    rules: tuple[RuleCount, ...]
+    edges: tuple[Count, ...]
+    targets: tuple[Count, ...]
+    areas: tuple[Count, ...]
+
+
+def _ranked(counter: Counter[str], top: int) -> tuple[Count, ...]:
+    return tuple(Count(label, count) for label, count in counter.most_common(top))
+
+
+def _area(filename: str, depth: int) -> str:
+    directories = PurePosixPath(filename).parent.parts
+    return "/".join(directories[:depth]) or "."
+
+
+def statistics(
+    result: Result, workspace: Workspace, rules: Sequence[Rule], *, top: int, depth: int
+) -> Statistics:
+    """Aggregate every finding the check kept, new or baselined."""
+    findings = [*result.findings, *result.baselined]
+    new = Counter(item.code for item in result.findings)
+    names = {rule.code: rule.name for rule in rules}
+    by_rule = Counter(item.code for item in findings)
+    files: dict[str, set[str]] = {}
+    for item in findings:
+        files.setdefault(item.code, set()).add(item.filename)
+
+    def layer(path: Path | None) -> str:
+        classification = None if path is None else workspace.classify(path)
+        return "unclassified" if classification is None else classification.name
+
+    edges = Counter(
+        f"{layer(workspace.root / item.filename)} -> "
+        f"{layer(source.path if (source := workspace.index.modules.get(item.target)) else None)}"
+        for item in findings
+        if item.code == "LIT101" and item.target is not None
+    )
+    return Statistics(
+        findings=len(findings),
+        new=len(result.findings),
+        baselined=len(result.baselined),
+        ignored=len(result.ignored),
+        rules=tuple(
+            RuleCount(code, names.get(code, code), count, new[code], len(files[code]))
+            for code, count in sorted(by_rule.items(), key=lambda pair: (-pair[1], pair[0]))
+        ),
+        edges=_ranked(edges, top),
+        targets=_ranked(
+            Counter(f"{item.code} {item.target}" for item in findings if item.target), top
+        ),
+        areas=_ranked(Counter(_area(item.filename, depth) for item in findings), top),
+    )
+
+
+def render_statistics(stats: Statistics, output: Format) -> str:
+    if output is Format.JSON:
+        return json.dumps(asdict(stats), indent=2)
+    lines = [
+        f"{_plural(stats.findings, 'finding')}: {stats.new} new, {stats.baselined} baselined"
+        f" ({stats.ignored} ignored)",
+        "",
+        "By rule",
+        *(
+            f"  {item.code}  {item.name:<22} {item.findings:>6}  {item.new:>6} new"
+            f"  {_plural(item.files, 'file')}"
+            for item in stats.rules
+        ),
+    ]
+    for title, counts in (
+        ("Layer edges (LIT101)", stats.edges),
+        ("Top targets", stats.targets),
+        ("Top areas", stats.areas),
+    ):
+        if counts:
+            lines.extend(("", title, *(f"  {item.findings:>6}  {item.label}" for item in counts)))
+    return "\n".join(lines)
