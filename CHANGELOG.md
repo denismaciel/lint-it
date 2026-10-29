@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.13.0
+
+Adopting lint-it on an existing codebase, and flexibility for layouts that do
+not match the built-in ones.
+
+### Adoption
+
+- **Baseline.** `workspace.baseline` names a JSON file of known findings,
+  keyed by file, rule and message rather than line. `lint-it baseline` writes
+  it; `check` reports only findings beyond it, plus a `LIT003` finding for
+  entries that no longer match; `lint-it baseline --prune` only ever removes
+  entries. `check --no-baseline` shows everything.
+- **`[[ignore]]`** switches rules off by path glob and/or layer, with a reason.
+  Unknown rules, `LIT001`/`LIT003`, and entries that suppress nothing in a full
+  check are `LIT003` findings.
+- **`lint-it report`** ranks findings (new and baselined) by rule, `LIT101`
+  layer edge, target and directory, as text or JSON; `--rule` focuses it.
+- Findings carry a `target`: the module, package, base, call or name they are
+  about. JSON output includes it, and the summary adds `baselined` and
+  `ignored` counts.
+
+### Flexibility
+
+- **Custom layers.** `[layers.<name>]` with a built-in `base` follows that
+  layer's rules under its own name. It inherits the base's dependency, import
+  and call policy unless the manifest names it, and counts as its base when
+  imported. `deterministic = true` holds it to core's `LIT201` standard.
+- **`LIT306 forbidden-call`** and `[forbidden_calls]`: per-layer bans on
+  resolved call names, `module.*` for a whole module. Nothing by default.
+- **`[[allowed_dependencies]]`** lets listed importer layers use named
+  workspace modules (`module.*` for a tree) regardless of their layer, with a
+  reason. Entries that match no module are `LIT003` findings.
+- **Layout precedence.** A custom layout's globs now come after the
+  conventional `tests/`, `scripts/`, `examples/` and `migrations/` patterns,
+  so they can reclassify them. `src/**/__init__.py` markers still come last.
+
+### Speed
+
+- A 3,000-file workspace checks in about 7s instead of 72s with identical
+  findings: top-level imports, initialization imports and resolved symbols are
+  computed once per module, cyclic garbage collection is off during a run, and
+  rule checks fan out to forked workers (`--jobs`, default one per CPU; falls
+  back to in-process where `fork` is unavailable).
+
+### Fixes
+
+- A string constant holding a lone surrogate no longer crashes symbol
+  resolution, and parsing strings as forward references no longer leaks
+  `SyntaxWarning`s.
+- Findings at the same position are ordered by message, so output is stable.
+
+### Python API
+
+- `Policy.layer_dependencies`, `forbidden_imports` and the new
+  `forbidden_calls` are keyed by layer name. `Classification` gains `name`
+  (the configured layer; `layer` is the base layer whose rules apply).
+  `engine.run` returns new, baselined and ignored findings; `engine.check`
+  still returns the findings to report.
+
 ## 0.12.0
 
 - `LIT403 restricted-subclassing`: a class may only extend an allowlisted base

@@ -6,8 +6,9 @@ is optional, and unknown keys are errors.
 
 A manifest that cannot be loaded is reported as `LIT003` at `lint-it.toml:1`
 and `lint-it check` exits with status 2. Entries that load but no longer match
-the workspace (stale or overlapping overrides, exceeded budgets) are ordinary
-`LIT003` findings.
+the workspace (stale or overlapping overrides, exceeded budgets, unused ignores,
+allowances that match no module, stale baseline entries) are ordinary `LIT003`
+findings.
 
 ## Workspace and packages
 
@@ -19,6 +20,7 @@ override_budget = 0        # files that may use [[overrides]]
 dependency_override_budget = 0
 effectful_types = ["example.clock.Clock"]          # extends LIT207's catalog
 clock_modules = ["example.integrations.clock"]     # may read wall time (LIT201)
+baseline = "lint-it-baseline.json"                 # known findings; see Adoption
 
 [[packages]]
 path = "packages/sdk"      # a directory with a pyproject.toml
@@ -49,17 +51,21 @@ Built-in layouts: `domains`, `hexagonal`, `flat`, `boundary` (every source file
 is a boundary) and `test-support` (every source file is test code). Run
 `lint-it classify` to see which glob matched each file.
 
-Every layout, custom ones included, ends with these patterns:
+Every layout includes these conventional patterns, after the built-in layout's
+own globs:
 
 | Glob | Layer |
 | --- | --- |
 | `conftest.py`, `tests/**/*.py` | `test` |
 | `scripts/**/*.py`, `examples/**/*.py` | `boundary` |
 | `migrations/**/*.py` | `transaction` |
-| `src/**/__init__.py` | `marker` |
 
-Define your own layout, optionally on top of a built-in one; its globs come
-after the base layout's, so they win:
+and ends with `src/**/__init__.py` as `marker`, which no layout glob can
+change (use an override).
+
+Define your own layout, optionally on top of a built-in one. Its globs come
+after the base layout's and the conventional patterns, so they win, and can
+reclassify tests, scripts or migrations:
 
 ```toml
 [workspace]
@@ -73,8 +79,31 @@ layers = [
 ]
 ```
 
-Without `extends`, only the listed globs and the common patterns apply. Built-in
-layouts cannot be redefined.
+Without `extends`, only the conventional patterns and the listed globs apply.
+Built-in layouts cannot be redefined.
+
+## Custom layers
+
+A custom layer follows a built-in layer's rules but has its own name, so it can
+have its own dependency, import and call policy. Layouts, overrides and every
+per-layer table accept it:
+
+```toml
+# Temporal workflow code: dispatches activities like a router, replays deterministically.
+[layers.workflow]
+base = "router"
+deterministic = true       # LIT201 bans every nondeterministic source, as in core
+
+[layouts.app]
+extends = "domains"
+layers = [{ glob = "src/*/workflows/**/workflow.py", layer = "workflow" }]
+```
+
+Until the manifest names it, a custom layer takes its base layer's entry in
+`[layer_dependencies]`, `[forbidden_imports]` and `[forbidden_calls]`, and
+`[extend_forbidden_imports]` applies to it as to any layer. When imported, it
+counts as its base layer: a layer that may import routers may import
+workflows. `lint-it classify` shows it as `workflow (a router)`.
 
 ## Policy
 
@@ -97,6 +126,11 @@ router = []
 [extend_forbidden_imports]
 "*" = ["legacy_app"]
 
+# Functions each layer may not call (LIT306), by resolved name; a trailing ".*"
+# bans a whole module. Empty by default.
+[forbidden_calls]
+workflow = ["time.sleep", "builtins.open"]
+
 # Naming conventions for LIT401 and LIT402, and the bases classes may extend
 # (LIT403). allowed_bases replaces the default list; extend_allowed_bases adds
 # to it. A trailing ".*" allows every name in a module.
@@ -107,6 +141,18 @@ extend_allowed_bases = ["ast.NodeVisitor", "fastapi.HTTPException"]
 ```
 
 The defaults are in [`src/lint_it/policy.py`](../src/lint_it/policy.py).
+
+Workspace modules that a layer may always import, whatever their own layer,
+are declared with a reason. Omit `layers` to allow every importer; a trailing
+`.*` covers a module tree. An entry matching no workspace module is a `LIT003`
+finding:
+
+```toml
+[[allowed_dependencies]]
+layers = ["shell", "router"]
+modules = ["example.database.repositories", "example.database.errors"]
+reason = "The repository facade is the persistence port until domains own ports"
+```
 
 ## Overrides
 
@@ -139,3 +185,34 @@ imported = "src/example/app/contracts.py"
 reason = "Move the application-owned type into the orders domain"
 issue = "EX-124"
 ```
+
+## Adoption
+
+Two tools let an existing codebase adopt lint-it before it is clean.
+
+`[[ignore]]` switches rules off where you have decided not to apply them yet.
+Each entry names rules by code or name, optionally limited to path globs
+(relative to the workspace root) and layers, and needs a reason. `LIT001` and
+`LIT003` cannot be ignored, and an entry that suppresses nothing in a full
+check is a `LIT003` finding:
+
+```toml
+[[ignore]]
+rules = ["mocking"]
+layers = ["test"]
+reason = "The suite moves from unittest.mock to fakes separately"
+
+[[ignore]]
+rules = ["LIT201"]
+paths = ["src/example/legacy/**"]
+reason = "Legacy billing is replaced in EX-200"
+```
+
+A baseline records the findings you already have. Set `workspace.baseline`,
+then run `lint-it baseline` to write it: a JSON file keyed by file, rule and
+message (not line), one entry per line, safe to commit. `lint-it check` then
+reports only findings beyond it, and a `LIT003` finding when entries no longer
+match, until `lint-it baseline --prune` drops them. `--prune` never adds
+entries, so the baseline only shrinks; `lint-it check --no-baseline` shows
+everything. `lint-it report` ranks the findings, new and baselined, by rule,
+layer edge, target and directory; `--rule LIT101` focuses it on one rule.

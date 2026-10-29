@@ -58,6 +58,8 @@ repos:
 lint-it init --layout domains   # write a starter lint-it.toml
 lint-it check                   # check the whole workspace
 lint-it check src/app/orders    # report findings under these paths only
+lint-it report                  # rank findings by rule, layer edge, target and area
+lint-it baseline                # record current findings so only new ones fail
 lint-it classify src            # show each file's layer and the pattern that matched
 lint-it explain LIT101          # show a rule's documentation
 lint-it rules                   # list every rule
@@ -69,7 +71,23 @@ lint-it rules                   # list every rule
 imports are followed across files and packages. Output formats are `text`,
 `json` (`{"findings": [...], "summary": {...}}`) and `github` (workflow
 annotations). Exit status is 0 when clean, 1 when there are findings, and 2 for
-usage errors or a manifest that cannot be loaded.
+usage errors or a manifest that cannot be loaded. Large workspaces are checked
+in parallel worker processes; `--jobs 1` checks in-process.
+
+### Adopting lint-it on an existing codebase
+
+Describe the code you have instead of moving it first: a custom layout maps
+today's directories to layers, and custom layers name the roles that don't fit
+the built-in ones (a Temporal workflow is a deterministic router). Then:
+
+1. `lint-it report` shows which rules, layer edges and imported modules produce
+   the findings, so you can tell policy questions from real debt.
+2. Settle policy in the manifest: `[[allowed_dependencies]]` for modules that
+   act as ports, `[[ignore]]` for a rule you are not adopting yet in a given
+   place, `[conventions]` for your framework bases. Each needs a reason.
+3. Set `workspace.baseline` and run `lint-it baseline`. `check` now fails only
+   on new findings, and on baseline entries that no longer match until you run
+   `lint-it baseline --prune`, so the baseline can only shrink.
 
 ## Layers
 
@@ -91,7 +109,8 @@ A package's `layout` maps paths to layers. The built-in layouts are `domains`
 `flat` (everything is shell, except `model.py`, `core.py`, `policy.py`,
 `ports.py`, `adapters/` and `cli.py`), `boundary`, and `test-support`. A
 package's `kind` (`server`, `client` or `library`) controls whether other
-packages may depend on it.
+packages may depend on it. Custom layers (`[layers.<name>]`) follow a built-in
+layer's rules with their own dependency policy.
 
 See [docs/rules.md](docs/rules.md) for every rule and
 [docs/configuration.md](docs/configuration.md) for the manifest.
