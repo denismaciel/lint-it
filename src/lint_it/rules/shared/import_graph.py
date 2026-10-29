@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable, Mapping
+from functools import cache
 from pathlib import Path
 
 from lint_it.imports import absolute_module, package_name
 from lint_it.workspace import Source
 
+Edge = tuple[ast.Import | ast.ImportFrom, str, str | None]
 
-def module_imports(
-    tree: ast.Module, package: str | None
-) -> Iterable[tuple[ast.AST, str, str | None]]:
+
+def module_imports(tree: ast.Module, package: str | None) -> Iterable[Edge]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -21,6 +22,15 @@ def module_imports(
                 continue
             for alias in node.names:
                 yield node, base, alias.name
+
+
+@cache
+def top_level_imports(tree: ast.Module, package: str | None) -> tuple[Edge, ...]:
+    """Imports directly in the module body: the names the module re-exports."""
+    body: list[ast.stmt] = [
+        node for node in tree.body if isinstance(node, ast.Import | ast.ImportFrom)
+    ]
+    return tuple(module_imports(ast.Module(body=body, type_ignores=[]), package))
 
 
 def _targets(
@@ -41,10 +51,10 @@ def _targets(
     # Follow explicit re-exports, including package __init__ modules.
     if name is not None:
         exports: list[Source] = []
-        for node, imported, symbol in module_imports(
+        for node, imported, symbol in top_level_imports(
             source.tree, package_name(module, source.path)
         ):
-            if not isinstance(node, ast.ImportFrom) or node not in source.tree.body:
+            if not isinstance(node, ast.ImportFrom):
                 continue
             if any(
                 alias.name == symbol
@@ -57,7 +67,8 @@ def _targets(
     return (source,)
 
 
-def _initialization_imports(tree: ast.Module) -> ast.Module:
+@cache
+def _initialization_imports(tree: ast.Module, package: str | None) -> tuple[Edge, ...]:
     """Imports in module/class control flow execute; function bodies are deferred."""
     imports: list[ast.stmt] = []
     pending: list[ast.AST] = list(tree.body)
@@ -69,7 +80,7 @@ def _initialization_imports(tree: ast.Module) -> ast.Module:
             imports.append(node)
         else:
             pending.extend(ast.iter_child_nodes(node))
-    return ast.Module(body=imports, type_ignores=[])
+    return tuple(module_imports(ast.Module(body=imports, type_ignores=[]), package))
 
 
 def loaded_sources(
@@ -107,8 +118,7 @@ def loaded_sources(
                 expanded.add(item.path)
                 pending.extend(
                     (base, member, True)
-                    for _, base, member in module_imports(
-                        _initialization_imports(item.tree),
-                        package_name(module_names[item.path], item.path),
+                    for _, base, member in _initialization_imports(
+                        item.tree, package_name(module_names[item.path], item.path)
                     )
                 )

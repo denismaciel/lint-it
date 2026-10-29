@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from lint_it.core import Finding, SourceFile, finding
 from lint_it.imports import absolute_module, package_name
-from lint_it.symbols import UNKNOWN, resolved_symbols
+from lint_it.symbols import UNKNOWN, module_symbols
 from lint_it.workspace import Source
 
 BUILTIN_EXCEPTIONS = frozenset(
@@ -71,10 +71,10 @@ def _definition(
     package = package_name(module, source.path)
     for statement in source.tree.body:
         if isinstance(statement, ast.ClassDef) and statement.name == attribute:
-            return statement, _Scope(source.tree, resolved_symbols(source.tree, package))
+            return statement, _Scope(source.tree, module_symbols(source.tree, package))
         value = _assigned_value(statement, attribute)
         if value is not None:
-            return value, _Scope(source.tree, resolved_symbols(source.tree, package))
+            return value, _Scope(source.tree, module_symbols(source.tree, package))
         if isinstance(statement, ast.ImportFrom):
             imported = absolute_module(statement, package)
             for alias in statement.names:

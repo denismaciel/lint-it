@@ -10,7 +10,7 @@ from typing import Protocol
 
 from lint_it.imports import package_name
 from lint_it.policy import Layer
-from lint_it.symbols import resolved_symbols
+from lint_it.symbols import module_symbols
 from lint_it.workspace import Classification, Workspace
 
 
@@ -57,7 +57,7 @@ class SourceFile:
 
     @cached_property
     def symbols(self) -> Mapping[ast.expr, frozenset[str]]:
-        return resolved_symbols(self.tree, self.package)
+        return module_symbols(self.tree, self.package)
 
 
 class Rule(Protocol):

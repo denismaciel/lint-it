@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from conftest import Project
 
-from lint_it import reporting
+from lint_it import engine, parallel, reporting
 from lint_it.cli import main
 from lint_it.rules.registry import ALL_RULES
 
@@ -209,3 +209,22 @@ def test_module_entry_point_runs_the_cli(project: Project) -> None:
 
 def test_lint_it_passes_its_own_rules() -> None:
     assert main(["check", "--root", str(REPOSITORY)]) == 0
+
+
+def test_parallel_workers_report_the_serial_findings(project: Project) -> None:
+    project.write(
+        {f"src/example/domains/orders{index}/core.py": "import httpx\n" for index in range(8)}
+    )
+    workspace = project.load()
+
+    serial = engine.check(workspace, ALL_RULES)
+    forked = engine.check(workspace, ALL_RULES, checker=parallel.checker(3, files_per_job=1))
+
+    assert forked == serial
+    assert len(serial) == 8
+
+
+def test_jobs_option_checks_in_process(project: Project) -> None:
+    project.write({CORE: "import httpx\n"})
+
+    assert run(project, "check", "--jobs", "1") == 1

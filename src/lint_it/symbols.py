@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import builtins
+from collections.abc import Mapping
+from functools import cache
 from types import MappingProxyType
 
 from lint_it.imports import absolute_module
@@ -344,3 +346,9 @@ def resolved_symbols(
     resolver = _Resolver({name: frozenset({f"builtins.{name}"}) for name in BUILTINS}, package)
     resolver.visit(tree)
     return resolver.references
+
+
+@cache
+def module_symbols(tree: ast.Module, package: str | None) -> Mapping[ast.expr, frozenset[str]]:
+    """``resolved_symbols`` for a snapshot module, computed once per tree."""
+    return MappingProxyType(resolved_symbols(tree, package))

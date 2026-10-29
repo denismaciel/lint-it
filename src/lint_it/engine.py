@@ -1,16 +1,33 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from lint_it.core import Finding, Rule, SourceFile, relative_name, sort_findings
 from lint_it.rules.registry import MANIFEST, PARSE_ERROR
 from lint_it.workspace import MANIFEST as MANIFEST_NAME
-from lint_it.workspace import Workspace
+from lint_it.workspace import Source, Workspace
+
+FileChecker = Callable[[Workspace, tuple[Rule, ...], Sequence[Source]], list[Finding]]
+
+
+def check_files(
+    workspace: Workspace, rules: tuple[Rule, ...], sources: Sequence[Source]
+) -> list[Finding]:
+    """Rule findings for ``sources``, which must belong to the snapshot."""
+    return [
+        item
+        for source in sources
+        for rule in rules
+        for item in rule.check(SourceFile(source.tree, source.path, workspace))
+    ]
 
 
 def check(
-    workspace: Workspace, rules: Iterable[Rule], selected: tuple[Path, ...] = ()
+    workspace: Workspace,
+    rules: Iterable[Rule],
+    selected: tuple[Path, ...] = (),
+    checker: FileChecker | None = None,
 ) -> list[Finding]:
     """Findings for the snapshot; ``selected`` limits file findings to those paths."""
 
@@ -33,9 +50,6 @@ def check(
         for failure in workspace.parse_failures
         if is_selected(failure.path)
     )
-    rules = tuple(rules)
-    for source in workspace.sources:
-        if is_selected(source.path):
-            file = SourceFile(source.tree, source.path, workspace)
-            findings.extend(item for rule in rules for item in rule.check(file))
+    sources = [source for source in workspace.sources if is_selected(source.path)]
+    findings.extend((checker or check_files)(workspace, tuple(rules), sources))
     return sort_findings(findings)

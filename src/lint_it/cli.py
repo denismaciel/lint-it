@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from lint_it import engine, reporting
+from lint_it import engine, parallel, reporting
 from lint_it.core import Finding, relative_name
 from lint_it.layouts import BUILT_IN
 from lint_it.loader import ManifestError, find_root, load_workspace
@@ -38,6 +39,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     check.add_argument(
         "--format", type=Format, choices=list(Format), default=Format.TEXT, dest="output"
+    )
+    check.add_argument(
+        "--jobs", type=int, help="worker processes (default: one per CPU; 1 checks in-process)"
     )
 
     explain = commands.add_parser("explain", help="show the documentation for a rule")
@@ -86,7 +90,7 @@ def _check(args: argparse.Namespace) -> int:
     if isinstance(selected, str):
         print(f"lint-it: {selected}", file=sys.stderr)
         return 2
-    findings = engine.check(workspace, ALL_RULES, selected)
+    findings = engine.check(workspace, ALL_RULES, selected, parallel.checker(args.jobs))
     files = len(workspace.sources) + len(workspace.parse_failures)
     output = reporting.report(
         findings, reporting.Summary(len(workspace.packages), files), args.output
@@ -166,4 +170,10 @@ COMMANDS = {
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    return COMMANDS[args.command](args)
+    # A run allocates millions of long-lived AST nodes and frees nothing until exit,
+    # so cyclic collection only rescans them.
+    gc.disable()
+    try:
+        return COMMANDS[args.command](args)
+    finally:
+        gc.enable()

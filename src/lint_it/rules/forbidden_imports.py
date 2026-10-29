@@ -5,7 +5,7 @@ from collections.abc import Iterable, Mapping
 
 from lint_it.core import Finding, SourceFile, finding
 from lint_it.imports import package_name
-from lint_it.rules.shared.import_graph import module_imports
+from lint_it.rules.shared.import_graph import module_imports, top_level_imports
 from lint_it.workspace import Source
 
 
@@ -27,9 +27,7 @@ def _reexported(
     if source is None or symbol is None:
         return set()
     reached: set[str] = set()
-    for node, imported, member in module_imports(source.tree, package_name(module, source.path)):
-        if node not in source.tree.body:
-            continue
+    for node, imported, member in top_level_imports(source.tree, package_name(module, source.path)):
         if isinstance(node, ast.ImportFrom):
             exported = any(
                 alias.name == member
