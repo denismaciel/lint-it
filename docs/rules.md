@@ -21,7 +21,7 @@
 | [LIT302](#lit302) | `transaction-boundary` | Code outside a transaction boundary calls `commit()` or `rollback()`. |
 | [LIT303](#lit303) | `router-construction` | A router constructs its own infrastructure. |
 | [LIT304](#lit304) | `mocking` | A test patches code instead of passing fakes in. |
-| [LIT305](#lit305) | `immutable-defaults` | A parameter default is not an immutable literal. |
+| [LIT305](#lit305) | `immutable-defaults` | A parameter default is not an immutable value. |
 | [LIT306](#lit306) | `forbidden-call` | A module calls a function its layer may not call. |
 | [LIT401](#lit401) | `boolean-policy` | A public core function takes a boolean, or returns one without a predicate name. |
 | [LIT402](#lit402) | `expected-outcome` | Core code raises or catches an expected outcome. |
@@ -207,10 +207,13 @@ hand-written fake that implements it.
 
 ### LIT305
 
-`immutable-defaults`: A parameter default is not an immutable literal.
+`immutable-defaults`: A parameter default is not an immutable value.
 
 Outside the edge layers (boundary, router, transaction, test), defaults may
-only be constants, signed numbers, and tuples of those. A default such as
+only be literals, signed numbers, tuples, `UPPER_CASE` constants and enum
+members, and immutable constructors such as `frozenset()` or `Decimal("0")`
+over those. A same-module constant bound to a mutable value still counts as
+mutable. A default such as
 `[]`, `Settings()` or `datetime.now()` is evaluated once at import time and
 hides a dependency; make the caller pass it. Protocol methods and exception
 `__init__` methods are exempt.

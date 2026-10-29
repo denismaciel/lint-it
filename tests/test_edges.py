@@ -128,6 +128,11 @@ def test_lit304_applies_to_test_support_packages(project: Project) -> None:
         "def calculate(items={}):\n    return items",
         "def calculate(*, items=set()):\n    return items",
         "def calculate(settings=Settings()):\n    return settings",
+        "def calculate(now=datetime.now()):\n    return now",
+        "def calculate(clock=lambda: 0):\n    return clock",
+        "def calculate(limit=default_limit):\n    return limit",
+        "DEFAULTS = []\ndef calculate(items=DEFAULTS):\n    return items",
+        "def calculate(items=frozenset(load())):\n    return items",
     ],
 )
 @pytest.mark.parametrize("path", [CORE, SERVICE, REPOSITORY])
@@ -139,6 +144,10 @@ def test_lit305_rejects_constructed_defaults(project: Project, path: str, source
     "source",
     [
         "def calculate(limit=10, name='x', ratio=-1.5, flags=(1, 2), missing=None): ...",
+        "LIMIT = 10\ndef calculate(limit=LIMIT, status=Status.OPEN, order=(Status.OPEN,)): ...",
+        "from example.config import MAX_ITEMS\ndef calculate(limit=MAX_ITEMS): ...",
+        "def calculate(seen=frozenset(), cost=Decimal('0'), ttl=timedelta(days=TTL_DAYS)): ...",
+        "def calculate(kinds=frozenset({Kind.A, Kind.B})): ...",
         "from typing import Protocol\nclass Store(Protocol):\n    def load(self, keys=[]): ...",
         "class OrderError(Exception):\n    def __init__(self, details={}): ...",
     ],

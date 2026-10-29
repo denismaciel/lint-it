@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0
+
+### Rules
+
+- **LIT305** accepts immutable references as parameter defaults: `UPPER_CASE`
+  constants, enum members such as `Status.OPEN`, tuples of those, and
+  `frozenset`, `tuple`, `Decimal`, `Fraction` and `timedelta` calls over
+  immutable arguments. A same-module constant bound to a mutable value, any
+  other call, and lambdas are still reported.
+
 ## 0.13.0
 
 Adopting lint-it on an existing codebase, and flexibility for layouts that do
