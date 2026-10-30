@@ -9,6 +9,8 @@ SERVICE = "src/example/domains/orders/service.py"
 REPOSITORY = "src/example/domains/orders/persistence/repository.py"
 ROUTER = "src/example/app/routers/orders.py"
 API = "src/example/app/api.py"
+DEPENDENCIES = "src/example/app/dependencies.py"
+FAKES = "src/example/domains/orders/fakes.py"
 
 
 @pytest.mark.parametrize(
@@ -23,6 +25,9 @@ API = "src/example/app/api.py"
         (REPOSITORY, SERVICE, "adapter cannot import shell module"),
         (ROUTER, MODEL, "router cannot import core module"),
         (ROUTER, REPOSITORY, "router cannot import adapter module"),
+        (SERVICE, FAKES, "shell cannot import test module example.domains.orders.fakes"),
+        (API, FAKES, "boundary cannot import test module example.domains.orders.fakes"),
+        (DEPENDENCIES, FAKES, "transaction cannot import test module"),
     ],
 )
 def test_lit101_rejects_disallowed_layers(
@@ -48,6 +53,9 @@ def test_lit101_rejects_disallowed_layers(
         (ROUTER, "src/example/app/dependencies.py"),
         (API, REPOSITORY),
         ("tests/test_orders.py", REPOSITORY),
+        ("tests/test_orders.py", FAKES),
+        (FAKES, "src/example/domains/orders/ports.py"),
+        ("src/example/db/fakes.py", FAKES),
     ],
 )
 def test_lit101_allows_permitted_layers(project: Project, importer: str, target: str) -> None:

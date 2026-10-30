@@ -14,13 +14,14 @@ class LayerDependencyRule:
     The allowed targets per layer come from `[layer_dependencies]`; by default
     core and port import only core and port, shell adds shell, adapter adds
     adapter, and routers import shell, boundary, router and transaction modules.
-    Other layers are unrestricted. A custom layer uses its base layer's entry
-    unless it has its own, and counts as its base layer when imported. Imports
-    are followed through package `__init__` modules and re-exports, so a package
-    initializer cannot launder a forbidden dependency. Each forbidden module is
-    reported once per importer. Declare modules a layer may always use with
-    `[[allowed_dependencies]]`, or record one deliberate edge with
-    `[[dependency_overrides]]`.
+    Other layers are unrestricted, except that only test code may import test
+    code, so a composition root cannot wire a fake into production. A custom
+    layer uses its base layer's entry unless it has its own, and counts as its
+    base layer when imported. Imports are followed through package `__init__`
+    modules and re-exports, so a package initializer cannot launder a forbidden
+    dependency. Each forbidden module is reported once per importer. Declare
+    modules a layer may always use with `[[allowed_dependencies]]`, or record
+    one deliberate edge with `[[dependency_overrides]]`.
     """
 
     code = "LIT101"
@@ -29,8 +30,10 @@ class LayerDependencyRule:
     def check(self, file: SourceFile) -> Iterable[Finding]:
         workspace, layer = file.workspace, file.layer_name
         policy = workspace.policy
-        allowed = policy.layer_dependencies.get(layer) if layer else None
-        if layer is None or allowed is None or file.package is None:
+        if layer is None or file.package is None:
+            return []
+        allowed = policy.layer_dependencies.get(layer)
+        if allowed is None and policy.is_a(layer, frozenset({Layer.TEST})):
             return []
         index = workspace.index
         findings: list[Finding] = []
@@ -43,7 +46,11 @@ class LayerDependencyRule:
                     classification is None
                     or target.path in seen
                     or target.path == file.path
-                    or policy.is_a(classification.name, allowed)
+                    or (
+                        policy.is_a(classification.name, allowed)
+                        if allowed is not None
+                        else not policy.is_a(classification.name, frozenset({Layer.TEST}))
+                    )
                     or classification.layer is Layer.MARKER
                     or policy.allows_dependency(layer, module)
                     or workspace.dependency_override_for(file.path, target.path) is not None

@@ -58,7 +58,9 @@ like `domains/orders/core.py`, and `ports/`, `service/`, `model/`, `policy/`,
 takes its package's layer whatever its own name, so `core/ports.py` is core;
 only `persistence/` reclassifies files below it. In `domains`, a top-level
 `db/` package is an adapter, except `db/unit_of_work` (module or package), which
-is a transaction. In `domains` and `projections`
+is a transaction. Fakes live next to the code they imitate: `fakes.py`,
+`fake.py` and `fakes/` anywhere under the package are `test`, so only test code
+may import them (LIT101). In `domains` and `projections`
 the package must sit inside a domain, so a domain named `policy` or `event` is
 not affected.
 

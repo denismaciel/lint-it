@@ -67,13 +67,14 @@ What each layer and package may import.
 The allowed targets per layer come from `[layer_dependencies]`; by default
 core and port import only core and port, shell adds shell, adapter adds
 adapter, and routers import shell, boundary, router and transaction modules.
-Other layers are unrestricted. A custom layer uses its base layer's entry
-unless it has its own, and counts as its base layer when imported. Imports
-are followed through package `__init__` modules and re-exports, so a package
-initializer cannot launder a forbidden dependency. Each forbidden module is
-reported once per importer. Declare modules a layer may always use with
-`[[allowed_dependencies]]`, or record one deliberate edge with
-`[[dependency_overrides]]`.
+Other layers are unrestricted, except that only test code may import test
+code, so a composition root cannot wire a fake into production. A custom
+layer uses its base layer's entry unless it has its own, and counts as its
+base layer when imported. Imports are followed through package `__init__`
+modules and re-exports, so a package initializer cannot launder a forbidden
+dependency. Each forbidden module is reported once per importer. Declare
+modules a layer may always use with `[[allowed_dependencies]]`, or record
+one deliberate edge with `[[dependency_overrides]]`.
 
 ### LIT102
 

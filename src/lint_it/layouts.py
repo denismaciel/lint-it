@@ -82,6 +82,9 @@ DOMAINS = (
         ("src/*/db/unit_of_work/**/*.py", Layer.TRANSACTION),
         ("src/*/integrations/**/*.py", Layer.ADAPTER),
         ("src/*/integrations/unit_of_work/**/*.py", Layer.TRANSACTION),
+        ("src/*/**/fakes.py", Layer.TEST),
+        ("src/*/**/fake.py", Layer.TEST),
+        ("src/*/**/fakes/**/*.py", Layer.TEST),
     ),
 )
 
