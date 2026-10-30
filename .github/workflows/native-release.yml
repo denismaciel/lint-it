@@ -1,0 +1,55 @@
+name: Native release artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/rust-reimplementation]
+    paths: [rust/**, .github/workflows/native-release.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install 1.99.0 --profile minimal --target ${{ matrix.target }}
+      - name: Install musl compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build native executable
+        shell: bash
+        run: cargo +1.99.0 build --locked --release --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
+      - name: Smoke test and stage executable
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
+          binary="rust/target/$TARGET/release/lint-it-rust$suffix"
+          "$binary" rules
+          mkdir -p native-artifacts
+          cp "$binary" "native-artifacts/lint-it-rust-$TARGET$suffix"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-${{ matrix.target }}
+          path: native-artifacts/*
+          if-no-files-found: error
