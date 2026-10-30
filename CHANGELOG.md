@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.17.0
+
+### Layouts
+
+- **`domains` classifies a top-level `db/` package.** `src/<pkg>/db/**` is an
+  adapter, so tables and repositories can live outside the domains, and
+  `db/unit_of_work.py` or `db/unit_of_work/` is a transaction. Files there
+  were previously unclassified.
+
 ## 0.16.0
 
 ### Rules
