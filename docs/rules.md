@@ -10,6 +10,7 @@
 | [LIT101](#lit101) | `layer-dependency` | A module imports a layer its own layer may not depend on. |
 | [LIT102](#lit102) | `forbidden-import` | A module imports a third-party package its layer may not use. |
 | [LIT103](#lit103) | `client-imports-server` | A client package imports a server package from the same workspace. |
+| [LIT104](#lit104) | `cross-domain-import` | A domain imports another domain it does not declare, or that domain's internals. |
 | [LIT201](#lit201) | `nondeterminism` | Code reads the clock, randomness, or fresh IDs directly. |
 | [LIT202](#lit202) | `io-in-core` | Core or port code performs I/O. |
 | [LIT203](#lit203) | `ambient-state` | Core or port code reads or writes state it was not given. |
@@ -94,6 +95,22 @@ re-exports a forbidden name is treated as that package.
 Packages with `kind = "client"` (SDKs, wire contracts) ship to consumers that
 do not have the server installed. They may import libraries and other
 clients, never modules owned by a `kind = "server"` package.
+
+### LIT104
+
+`cross-domain-import`: A domain imports another domain it does not declare, or that domain's internals.
+
+A module under `<package>/domains/<name>/` belongs to domain `<name>`. It may
+import another domain only when `[domains]` lists that domain among its
+dependencies, and then only its core and shell modules (`core.py`,
+`model.py`, `service.py`, ...); ports, adapters such as `persistence/`, and
+boundaries stay private to their domain. Undeclared imports always fail,
+so a workspace without `[domains]` keeps its domains independent. The
+graph is checked when the manifest loads: every domain a dependency names
+needs its own entry, and a cycle is a manifest error. `shared/`,
+`projections/` and everything outside `domains/` are not domains. Imports
+are followed through package `__init__` modules and re-exports, as for
+LIT101, and `[[dependency_overrides]]` exempts one deliberate edge.
 
 ## Core purity
 

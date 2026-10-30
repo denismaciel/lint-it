@@ -10,6 +10,7 @@ from lint_it.rules.borrowed_mutation import BorrowedMutationRule
 from lint_it.rules.capabilities import EffectfulCapabilityRule
 from lint_it.rules.client_imports import ClientImportRule
 from lint_it.rules.defaults import ImmutableDefaultRule
+from lint_it.rules.domains import DomainDependencyRule
 from lint_it.rules.environment import EnvironmentAccessRule
 from lint_it.rules.forbidden_calls import ForbiddenCallRule
 from lint_it.rules.forbidden_imports import ForbiddenImportRule
@@ -35,6 +36,7 @@ ALL_RULES: tuple[Rule, ...] = (
     LayerDependencyRule(),
     ForbiddenImportRule(),
     ClientImportRule(),
+    DomainDependencyRule(),
     NondeterminismRule(),
     IoCallRule(),
     AmbientStateRule(),

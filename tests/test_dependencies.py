@@ -42,7 +42,7 @@ def test_lit101_rejects_disallowed_layers(
         (CORE, MODEL),
         (CORE, "src/example/domains/orders/ports.py"),
         (SERVICE, CORE),
-        (SERVICE, "src/example/domains/billing/service.py"),
+        (SERVICE, "src/example/domains/orders/checkout/service.py"),
         (REPOSITORY, MODEL),
         (ROUTER, SERVICE),
         (ROUTER, "src/example/app/dependencies.py"),

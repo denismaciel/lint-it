@@ -144,9 +144,18 @@ def matches_name(name: str, patterns: Iterable[str]) -> bool:
     )
 
 
+def domain_of(module: str) -> tuple[str, str] | None:
+    """The ``(package, domain)`` owning a ``<package>.domains.<domain>`` module."""
+    parts = module.split(".")
+    if len(parts) < 3 or parts[1] != "domains":
+        return None
+    return parts[0], parts[2]
+
+
 @dataclass(frozen=True)
 class Policy:
-    """Per-layer tables are keyed by layer name, built-in or custom."""
+    """Per-layer tables are keyed by layer name, built-in or custom. ``domain_dependencies``
+    maps each declared domain to the domains it may import; the graph is acyclic."""
 
     layer_dependencies: Mapping[str, frozenset[str]] = LAYER_DEPENDENCIES
     forbidden_imports: Mapping[str, frozenset[str]] = FORBIDDEN_IMPORTS
@@ -158,6 +167,7 @@ class Policy:
     allowed_bases: frozenset[str] = ALLOWED_BASES
     effectful_types: frozenset[str] = frozenset()
     clock_modules: frozenset[str] = frozenset()
+    domain_dependencies: Mapping[str, frozenset[str]] = MappingProxyType({})
 
     def base(self, layer: str) -> Layer:
         custom = self.custom_layers.get(layer)

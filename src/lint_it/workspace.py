@@ -26,6 +26,7 @@ from lint_it.policy import (
     CustomLayer,
     Layer,
     Policy,
+    domain_of,
     matches_name,
 )
 
@@ -275,6 +276,12 @@ class Workspace:
             for pattern in item.modules
             if not any(matches_name(module, (pattern,)) for module in modules)
         )
+        domains = {owner[1] for module in modules if (owner := domain_of(module)) is not None}
+        errors.extend(
+            f"declared domain matches no domains/ package: {name}"
+            for name in self.policy.domain_dependencies
+            if name not in domains
+        )
         dependency_overrides = sum(len(package.dependency_overrides) for package in self.packages)
         if dependency_overrides > self.dependency_override_budget:
             errors.append(
@@ -462,6 +469,39 @@ def _allowed_dependencies(
     return tuple(allowances)
 
 
+def _domain_dependencies(raw: Mapping[str, object]) -> dict[str, frozenset[str]]:
+    graph: dict[str, frozenset[str]] = {}
+    for name, value in _table(raw, "domains").items():
+        if not name.isidentifier():
+            raise ValueError(f"domains key must be a Python identifier; got {name!r}")
+        dependencies = string_list(value, f"domains.{name}")
+        if name in dependencies:
+            raise ValueError(f"domains.{name} cannot depend on itself")
+        graph[name] = frozenset(dependencies)
+    for name, dependencies in graph.items():
+        undeclared = sorted(dependencies - graph.keys())
+        if undeclared:
+            raise ValueError(
+                f"domains.{name} names undeclared domains: {', '.join(undeclared)}; "
+                "give every domain its own entry"
+            )
+    finished: set[str] = set()
+
+    def visit(name: str, path: tuple[str, ...]) -> None:
+        if name in path:
+            cycle = " -> ".join((*path[path.index(name) :], name))
+            raise ValueError(f"domains form a cycle: {cycle}")
+        if name in finished:
+            return
+        for dependency in sorted(graph[name]):
+            visit(dependency, (*path, name))
+        finished.add(name)
+
+    for name in sorted(graph):
+        visit(name, ())
+    return graph
+
+
 def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
     custom = _custom_layers(_table(raw, "layers"))
     layers = (*(layer.value for layer in Layer), *custom)
@@ -541,6 +581,7 @@ def _policy(raw: dict[str, object], workspace: dict[str, object]) -> Policy:
         clock_modules=_qualified_names(
             workspace.get("clock_modules", []), "workspace.clock_modules"
         ),
+        domain_dependencies=MappingProxyType(_domain_dependencies(raw)),
     )
 
 
@@ -568,6 +609,7 @@ def load_manifest(
                 "conventions",
                 "overrides",
                 "dependency_overrides",
+                "domains",
             }
         ),
         "manifest",

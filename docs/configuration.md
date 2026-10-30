@@ -163,6 +163,29 @@ modules = ["example.database.repositories", "example.database.errors"]
 reason = "The repository facade is the persistence port until domains own ports"
 ```
 
+## Domains
+
+A module under `<package>/domains/<name>/` belongs to domain `<name>`.
+`[domains]` declares which domains each one may import (LIT104):
+
+```toml
+[domains]
+billing = ["orders", "customers"]
+orders = ["customers"]
+customers = []
+```
+
+Importing an undeclared domain is a finding, so without this table domains
+cannot import each other at all. A declared dependency opens only the other
+domain's core and shell modules (`core.py`, `model.py`, `service.py`, ...);
+its ports, `persistence/` and boundaries stay private. Values in `shared/`
+and read models in `projections/` are not domains and need no entry.
+
+The graph is validated when the manifest loads: every domain a dependency
+names needs its own entry, even with no dependencies, and a cycle such as
+`billing -> orders -> billing` is a manifest error. A declared domain with no
+`domains/<name>/` package is a `LIT003` finding.
+
 ## Overrides
 
 A file that cannot move yet can be given a layer explicitly. Overrides need a

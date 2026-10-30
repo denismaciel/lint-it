@@ -189,7 +189,7 @@ def test_report_ranks_rules_edges_targets_and_areas(
     run(project, "baseline")
     project.write(
         {
-            "src/example/domains/billing/service.py": (
+            "src/example/projections/summary/service.py": (
                 "from example.domains.orders.persistence.repository import VALUE\n"
             )
         }
