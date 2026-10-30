@@ -234,7 +234,8 @@ fn execute(command: Command) -> Result<u8, String> {
             } else {
                 actual
             };
-            std::fs::write(path, render_baseline(&counts)).map_err(|e| e.to_string())?;
+            std::fs::write(path, native_newlines(render_baseline(&counts)))
+                .map_err(|e| e.to_string())?;
             let recorded: usize = counts.values().sum();
             let files = counts
                 .iter()
@@ -337,10 +338,18 @@ fn execute(command: Command) -> Result<u8, String> {
                         e.to_string()
                     }
                 })?;
-            write!(file,"# lint-it manifest: https://github.com/denismaciel/lint-it/blob/main/docs/configuration.md\n\n[workspace]\nkind = \"{kind}\"\nlayout = \"{layout}\"\n").map_err(|e|e.to_string())?;
+            file.write_all(native_newlines(format!("# lint-it manifest: https://github.com/denismaciel/lint-it/blob/main/docs/configuration.md\n\n[workspace]\nkind = \"{kind}\"\nlayout = \"{layout}\"\n")).as_bytes()).map_err(|e|e.to_string())?;
             println!("wrote {}; run `lint-it check` next", path.display());
             Ok(0)
         }
+    }
+}
+// Match Python's text-mode file writes on each platform.
+fn native_newlines(text: String) -> String {
+    if cfg!(windows) {
+        text.replace('\n', "\r\n")
+    } else {
+        text
     }
 }
 fn render_baseline(counts: &BTreeMap<(String, String, String), usize>) -> String {

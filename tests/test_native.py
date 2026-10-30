@@ -27,7 +27,10 @@ def test_native_stateful_cli_matches_python(tmp_path: Path, output: str) -> None
         (root / "pyproject.toml").write_text('[project]\nname = "example"\n')
         source = root / "src/example/core.py"
         source.parent.mkdir(parents=True)
-        source.write_text("import httpx\nVALUE = []\n")
+        source.write_text("import httpx\nfrom .adapters.store import VALUE\nVALUE = []\n")
+        adapter = root / "src/example/adapters/store.py"
+        adapter.parent.mkdir()
+        adapter.write_text("VALUE = 1\n")
 
     def compare(*args: str) -> None:
         processes = [
@@ -56,6 +59,7 @@ def test_native_stateful_cli_matches_python(tmp_path: Path, output: str) -> None
     compare("rules")
     compare("rules", "--format", "markdown")
     compare("init", "--layout", "flat", "--kind", "library")
+    assert (roots[0] / "lint-it.toml").read_bytes() == (roots[1] / "lint-it.toml").read_bytes()
     compare("init", "--layout", "flat")
     for root in roots:
         with (root / "lint-it.toml").open("a") as manifest:

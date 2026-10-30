@@ -47,6 +47,10 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then export CC=musl-gcc; fi
+          # Ubuntu's musl wrapper cannot link GCC's glibc-based ARM atomic helpers.
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            export CFLAGS="$CFLAGS -mno-outline-atomics"
+          fi
           cargo +1.99.0 build --locked --release --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
       - name: Smoke test and stage executable
         shell: bash
@@ -67,6 +71,9 @@ jobs:
           suffix=""
           if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
           export LINT_IT_NATIVE_BINARY="$PWD/rust/target/$TARGET/release/lint-it-rust$suffix"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LINT_IT_NATIVE_BINARY="$(cygpath -m "$LINT_IT_NATIVE_BINARY")"
+          fi
           export LINT_IT_RUST_BINARY="$LINT_IT_NATIVE_BINARY"
           uv sync --locked
           uv run pytest tests/test_native.py tests/test_launcher.py tests/test_packaging.py

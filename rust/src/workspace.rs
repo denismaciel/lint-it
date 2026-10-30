@@ -586,7 +586,7 @@ fn relative(path: &Path, root: &Path) -> String {
     if s.is_empty() {
         ".".into()
     } else {
-        s.into_owned()
+        s.replace(std::path::MAIN_SEPARATOR, "/")
     }
 }
 impl Workspace {
@@ -1132,7 +1132,10 @@ pub fn load(root: &Path) -> Result<Workspace, String> {
                 .strip_prefix(ws.packages[owner].root.join("src"))
                 .ok()
                 .map(|p| {
-                    let mut s = p.with_extension("").to_string_lossy().replace('/', ".");
+                    let mut s = p
+                        .with_extension("")
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, ".");
                     if s == "__init__" {
                         s.clear()
                     } else if s.ends_with(".__init__") {
@@ -1259,6 +1262,8 @@ mod tests {
                 .all(|pair| pair[0].path < pair[1].path)
         );
         let core = ws.module_source("example.domains.orders.core").unwrap();
+        assert_eq!(core.filename, "src/example/domains/orders/core.py");
+        assert_eq!(core.package.as_deref(), Some("example.domains.orders"));
         let top = ws.top_imports(core);
         assert_eq!(top[0].1, "httpx");
         assert!(std::ptr::eq(top, ws.top_imports(core)));

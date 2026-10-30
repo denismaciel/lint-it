@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -76,7 +77,8 @@ def test_local_binary_override(
     result = hatch_build.bundle_binary(tmp_path, "1.2.3", target)
     assert result == tmp_path / "src" / "lint_it" / "_bin" / filename
     assert result.read_bytes() == source.read_bytes()
-    assert result.stat().st_mode & 0o777 == 0o755
+    if os.name != "nt":
+        assert result.stat().st_mode & 0o777 == 0o755
     network.assert_not_called()
 
 
@@ -102,7 +104,8 @@ def test_release_download_verifies_checksum(
     monkeypatch.setattr(hatch_build.urllib.request, "urlopen", download)
     result = hatch_build.bundle_binary(tmp_path, "1.2.3", "x86_64-unknown-linux-musl")
     assert result.read_bytes() == data
-    assert result.stat().st_mode & 0o777 == 0o755
+    if os.name != "nt":
+        assert result.stat().st_mode & 0o777 == 0o755
     download.assert_called_once()
     request = download.call_args.args[0]
     assert request.full_url == (

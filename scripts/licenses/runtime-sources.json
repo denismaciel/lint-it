@@ -1,0 +1,40 @@
+{
+  "rust_version": "1.99.0",
+  "rust_commit": "b940084d7eb6a299eb4bfeb8e34901bc051e7ac4",
+  "rust_archive_sha256": "77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5",
+  "musl_version_evidence": "https://raw.githubusercontent.com/rust-lang/rust/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/src/ci/docker/scripts/musl-toolchain.sh",
+  "files": {
+    "rust-1.99.0-COPYRIGHT-library.html": {
+      "source": "https://static.rust-lang.org/dist/2026-10-01/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz#rustc/share/doc/rust/COPYRIGHT-library.html",
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    "rust-1.99.0-LICENSE-MIT": {
+      "source": "https://raw.githubusercontent.com/rust-lang/rust/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/LICENSE-MIT",
+      "sha256": "b71bd43a069ca0641a9ecfe585ca7b3c53b5cc1608f8b68321168698e28b5ea1"
+    },
+    "rust-1.99.0-LICENSE-APACHE": {
+      "source": "https://raw.githubusercontent.com/rust-lang/rust/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    "musl-1.2.5-COPYRIGHT": {
+      "source": "https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.5",
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+    },
+    "musl-1.2.6-COPYRIGHT": {
+      "source": "https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.6",
+      "sha256": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b"
+    },
+    "llvm-libunwind-LICENSE": {
+      "source": "https://raw.githubusercontent.com/rust-lang/llvm-project/7738295178045041669876bf32b0543ec8319a5c/libunwind/LICENSE.TXT",
+      "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+    },
+    "llvm-compiler-rt-LICENSE": {
+      "source": "https://raw.githubusercontent.com/rust-lang/llvm-project/7738295178045041669876bf32b0543ec8319a5c/compiler-rt/LICENSE.TXT",
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+    },
+    "musl-1.2.4-COPYRIGHT": {
+      "source": "https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.4",
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+    }
+  }
+}

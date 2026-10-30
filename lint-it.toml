@@ -3,7 +3,7 @@ kind = "library"
 layout = "lint-it"
 
 [conventions]
-extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor", "hatchling.builders.hooks.plugin.interface.BuildHookInterface"]
+extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor", "hatchling.builders.hooks.plugin.interface.BuildHookInterface", "html.parser.HTMLParser"]
 
 [layouts.lint-it]
 extends = "flat"
