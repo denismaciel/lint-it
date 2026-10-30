@@ -1,0 +1,33 @@
+[package]
+name = "lint-it-rust"
+version = "0.18.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+
+[[bin]]
+name = "lint-it-rust"
+path = "src/main.rs"
+
+[dependencies]
+ruff_python_parser = "=0.0.20"
+ruff_python_ast = "=0.0.20"
+ruff_text_size = "=0.0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.9"
+rayon = "1"
+walkdir = "2"
+regex = "1"
+clap = { version = "4", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = "0.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# Keep jemalloc's C probes optimized, including with Nix's fortified toolchain.
+[profile.dev.package.tikv-jemalloc-sys]
+opt-level = 2

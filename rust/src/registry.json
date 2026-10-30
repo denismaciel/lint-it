@@ -1,0 +1,117 @@
+[
+  {
+    "code": "LIT001",
+    "name": "parse-error",
+    "documentation": "A Python file in the workspace cannot be parsed.\n\nNo other rule can check a file that does not parse, so this finding hides\nnothing: fix the syntax error and run the check again."
+  },
+  {
+    "code": "LIT002",
+    "name": "unclassified-file",
+    "documentation": "A Python file matches no layer.\n\nEvery file in a package must belong to exactly one layer, because the other\nrules are defined per layer. Move the file to a path the package layout\nrecognizes, extend the layout in `[layouts.<name>]`, or add an `[[overrides]]`\nentry with a reason and an issue."
+  },
+  {
+    "code": "LIT003",
+    "name": "manifest",
+    "documentation": "`lint-it.toml` is invalid or out of date with the workspace.\n\nReported at `lint-it.toml:1` for schema errors, unknown keys, overrides that\nno longer match any file, overlapping overrides, and exceeded override\nbudgets. A manifest that cannot be loaded at all exits with status 2."
+  },
+  {
+    "code": "LIT101",
+    "name": "layer-dependency",
+    "documentation": "A module imports a layer its own layer may not depend on.\n\nThe allowed targets per layer come from `[layer_dependencies]`; by default\ncore and port import only core and port, shell adds shell, adapter adds\nadapter, and routers import shell, boundary, router and transaction modules.\nOther layers are unrestricted, except that only test code may import test\ncode, so a composition root cannot wire a fake into production. A custom\nlayer uses its base layer's entry unless it has its own, and counts as its\nbase layer when imported. Imports are followed through package `__init__`\nmodules and re-exports, so a package initializer cannot launder a forbidden\ndependency. Each forbidden module is reported once per importer. Declare\nmodules a layer may always use with `[[allowed_dependencies]]`, or record\none deliberate edge with `[[dependency_overrides]]`."
+  },
+  {
+    "code": "LIT102",
+    "name": "forbidden-import",
+    "documentation": "A module imports a third-party package its layer may not use.\n\nBy default core and port modules may not import I/O clients (`httpx`,\n`requests`, `redis`, `sqlite3`, `subprocess`, ...) or frameworks (`fastapi`,\n`starlette`, `sqlalchemy`, `pydantic`, `pydantic_settings`); shell modules\nmay not import frameworks; routers may not import `sqlalchemy`. Set\n`[forbidden_imports]` to replace a layer's list, or\n`[extend_forbidden_imports]` to add to it. Every import statement counts,\nincluding deferred and `TYPE_CHECKING` ones, and a workspace module that\nre-exports a forbidden name is treated as that package."
+  },
+  {
+    "code": "LIT103",
+    "name": "client-imports-server",
+    "documentation": "A client package imports a server package from the same workspace.\n\nPackages with `kind = \"client\"` (SDKs, wire contracts) ship to consumers that\ndo not have the server installed. They may import libraries and other\nclients, never modules owned by a `kind = \"server\"` package."
+  },
+  {
+    "code": "LIT104",
+    "name": "cross-domain-import",
+    "documentation": "A domain imports another domain it does not declare, or that domain's internals.\n\nA module under `<package>/domains/<name>/` belongs to domain `<name>`. It may\nimport another domain only when `[domains]` lists that domain among its\ndependencies, and then only its core and shell modules (`core.py`,\n`model.py`, `service.py`, ...); ports, adapters such as `persistence/`, and\nboundaries stay private to their domain. Undeclared imports always fail,\nso a workspace without `[domains]` keeps its domains independent. The\ngraph is checked when the manifest loads: every domain a dependency names\nneeds its own entry, and a cycle is a manifest error. `shared/`,\n`projections/` and everything outside `domains/` are not domains. Imports\nare followed through package `__init__` modules and re-exports, as for\nLIT101, and `[[dependency_overrides]]` exempts one deliberate edge."
+  },
+  {
+    "code": "LIT201",
+    "name": "nondeterminism",
+    "documentation": "Code reads the clock, randomness, or fresh IDs directly.\n\nCore and port modules may not read any nondeterministic source (`time`,\n`datetime.now`, `uuid4`, `random`, `secrets`, `os.urandom`); pass the\nobserved value in. Elsewhere only wall-clock reads are reported, so time\nflows through one clock you can control in tests. List that clock's modules\nin `workspace.clock_modules`; test modules are exempt. A custom layer with\n`deterministic = true`, such as Temporal workflow code, is held to the core\nstandard."
+  },
+  {
+    "code": "LIT202",
+    "name": "io-in-core",
+    "documentation": "Core or port code performs I/O.\n\nCovers files and paths (`open`, `Path.read_text`, `shutil`, `tempfile`),\nprocesses and the OS (`os.system`, `sys.exit`), standard streams, logging,\n`print`/`input`, and any call into an I/O client package. Do the I/O in the\nshell and pass the result into the core."
+  },
+  {
+    "code": "LIT203",
+    "name": "ambient-state",
+    "documentation": "Core or port code reads or writes state it was not given.\n\nReports process-wide context (working directory, locale, decimal context,\ncontext variables), writes through `global`/`nonlocal`, and reads of\nmutable module-level collections. Pass the value in and return the new\nstate instead. Environment variables are covered by LIT301."
+  },
+  {
+    "code": "LIT204",
+    "name": "borrowed-mutation",
+    "documentation": "Core or port code mutates a value it received as an argument.\n\nTracks parameters, and aliases of them, through assignment, item and\nattribute stores, `del`, augmented assignment, and mutating methods of\nlists, dicts and sets. Build and return a new value instead; the caller\nowns what it passed in."
+  },
+  {
+    "code": "LIT205",
+    "name": "frozen-values",
+    "documentation": "A core or port dataclass is mutable.\n\nDataclasses must be declared with `frozen=True`, and their fields may not be\nannotated with mutable collections (`list`, `dict`, `set`, or the `typing`\nand `collections.abc` mutable protocols). `ClassVar` fields are exempt. Use\ntuples, frozensets, or read-only `Mapping`/`Sequence` interfaces."
+  },
+  {
+    "code": "LIT206",
+    "name": "async-in-core",
+    "documentation": "Core code awaits or schedules concurrent work.\n\n`await`, `async for`, `async with`, `asyncio` scheduling, threads and process\npools belong in the shell. The core computes a decision from values; the\nshell decides when and how concurrently to carry it out."
+  },
+  {
+    "code": "LIT207",
+    "name": "effectful-capability",
+    "documentation": "A core function takes a parameter that can perform effects.\n\nDatabase sessions and connections, HTTP clients, file objects and\nfilesystems are capabilities: a function that receives one can do I/O even\nwhen it imports nothing. Types are matched by exact resolved name, through\naliases, unions, `Optional`, `Annotated` and string annotations. Add your own\nwith `workspace.effectful_types`. Ports are exempt because they describe\neffectful collaborators."
+  },
+  {
+    "code": "LIT301",
+    "name": "environment-access",
+    "documentation": "Code outside the edges reads environment variables.\n\n`os.environ`, `os.getenv` and their bytes variants, through any alias, are\nallowed only in boundary, transaction and test modules. Read configuration\nonce at startup and pass typed values inward."
+  },
+  {
+    "code": "LIT302",
+    "name": "transaction-boundary",
+    "documentation": "Code outside a transaction boundary calls `commit()` or `rollback()`.\n\nOne place per request or job decides when work is durable. Any method named\n`commit` or `rollback` counts, on any receiver; only transaction and test\nmodules may call them."
+  },
+  {
+    "code": "LIT303",
+    "name": "router-construction",
+    "documentation": "A router constructs its own infrastructure.\n\nRouters receive repositories, clients, engines and settings through\ndependency injection; they never build them. Calls to anything named\n`*Repository`, `*Client` or `*Engine`, `create_engine`,\n`create_async_engine` or `load_settings` are reported, matched by resolved\nname when the import is known."
+  },
+  {
+    "code": "LIT304",
+    "name": "mocking",
+    "documentation": "A test patches code instead of passing fakes in.\n\nReports `unittest.mock`, pytest-mock fixtures (`mocker` and friends) and\n`monkeypatch` methods in test modules. If a test needs to replace a\ncollaborator, the code under test should accept it as a port; pass a\nhand-written fake that implements it."
+  },
+  {
+    "code": "LIT305",
+    "name": "immutable-defaults",
+    "documentation": "A parameter default is not an immutable value.\n\nOutside the edge layers (boundary, router, transaction, test), defaults may\nonly be literals, signed numbers, tuples, `UPPER_CASE` constants and enum\nmembers, and immutable constructors such as `frozenset()` or `Decimal(\"0\")`\nover those. A same-module constant bound to a mutable value still counts as\nmutable. A default such as\n`[]`, `Settings()` or `datetime.now()` is evaluated once at import time and\nhides a dependency; make the caller pass it. Protocol methods and exception\n`__init__` methods are exempt."
+  },
+  {
+    "code": "LIT306",
+    "name": "forbidden-call",
+    "documentation": "A module calls a function its layer may not call.\n\nNothing is forbidden by default. List qualified names per layer in\n`[forbidden_calls]`, with a trailing `.*` for a whole module: for example\n`time.sleep` and `asyncio.sleep` in Temporal workflow code, which must use\nthe workflow's own timer. Calls are matched by resolved name, so aliases\nand `from` imports count. A custom layer inherits its base layer's list\nunless it has its own."
+  },
+  {
+    "code": "LIT401",
+    "name": "boolean-policy",
+    "documentation": "A public core function takes a boolean, or returns one without a predicate name.\n\nA `bool` parameter is a hidden mode switch; replace it with an enum or a\nnamed value type. A function returning `bool` must be named as a question,\nwith one of the prefixes in `conventions.predicate_prefixes` (default `is_`,\n`has_`, `can_`, `should_`, `allows_`, `contains_`, `matches_`). Private\nfunctions are exempt."
+  },
+  {
+    "code": "LIT402",
+    "name": "expected-outcome",
+    "documentation": "Core code raises or catches an expected outcome.\n\n\"Not found\", \"denied\" or \"expired\" are ordinary results of a decision, not\nfailures. Exceptions whose names end with a suffix from\n`conventions.outcome_suffixes` (default `NotFound`, `AlreadyExists`,\n`Conflict`, `Denied`, `Expired`, `Forbidden`, `Rejected`, `Unauthorized`,\n`Unavailable`) may not be raised or caught in core modules; return a named\nresult type instead."
+  },
+  {
+    "code": "LIT403",
+    "name": "restricted-subclassing",
+    "documentation": "A class extends a base that is not on the allowlist.\n\nInheritance couples a class to its parent's internals; prefer composition,\nfunctions over values, and `Protocol`s for shared interfaces. A class may\nextend a name in `conventions.allowed_bases` (default: every builtin, such\nas `Exception`, plus `typing.Protocol`/`NamedTuple`/`TypedDict`/`Generic`,\n`enum` bases, Pydantic `BaseModel`/`RootModel`/`BaseSettings`, and\nSQLAlchemy declarative bases and `TypeDecorator`), or a workspace class that\ndirectly extends one: a shared `Base(DeclarativeBase)` for tables, a common\n`Model(BaseModel)`, a `DomainError(Exception)`, or a `Protocol` a fake\nimplements. Deeper hierarchies are reported, except for exceptions, which\nmay nest to any depth. A table that extends a declarative base may also mix\nin plain workspace classes, such as a `ProjectOwned` holding shared columns.\nEntries ending in `.*` allow a whole module. Set `conventions.allowed_bases`\nto replace the list, or `conventions.extend_allowed_bases` to add to it."
+  }
+]

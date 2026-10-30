@@ -8,6 +8,7 @@ extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor"]
 [layouts.lint-it]
 extends = "flat"
 layers = [
+  { glob = "benchmarks/**/*.py", layer = "test" },
   { glob = "src/*/baseline.py", layer = "core" },
   { glob = "src/*/config_values.py", layer = "core" },
   { glob = "src/*/engine.py", layer = "core" },
@@ -19,3 +20,8 @@ layers = [
   { glob = "src/*/workspace.py", layer = "core" },
   { glob = "src/*/rules/**/*.py", layer = "core" },
 ]
+
+[[ignore]]
+rules = ["LIT304"]
+paths = ["benchmarks/differential_plugin.py"]
+reason = "The differential harness intercepts oracle engine runs to compare real native subprocess results."

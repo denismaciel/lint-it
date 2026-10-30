@@ -117,6 +117,19 @@ layer's rules with their own dependency policy.
 See [docs/rules.md](docs/rules.md) for every rule and
 [docs/configuration.md](docs/configuration.md) for the manifest.
 
+## Rust implementation
+
+A standalone native implementation is available alongside the Python reference:
+
+```bash
+cargo build --locked --release --manifest-path rust/Cargo.toml
+rust/target/release/lint-it-rust check
+```
+
+It reuses Ruff's parser, parallelizes analysis, and preserves lint-it's rules and
+CLI commands. See [build and verification instructions](rust/README.md) and the
+[Python/Rust performance comparison](benchmarks/README.md).
+
 ## Development
 
 ```bash
