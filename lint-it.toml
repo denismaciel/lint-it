@@ -3,11 +3,12 @@ kind = "library"
 layout = "lint-it"
 
 [conventions]
-extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor"]
+extend_allowed_bases = ["ast.NodeTransformer", "ast.NodeVisitor", "hatchling.builders.hooks.plugin.interface.BuildHookInterface"]
 
 [layouts.lint-it]
 extends = "flat"
 layers = [
+  { glob = "hatch_build.py", layer = "boundary" },
   { glob = "benchmarks/**/*.py", layer = "test" },
   { glob = "src/*/baseline.py", layer = "core" },
   { glob = "src/*/config_values.py", layer = "core" },
@@ -25,3 +26,8 @@ layers = [
 rules = ["LIT304"]
 paths = ["benchmarks/differential_plugin.py"]
 reason = "The differential harness intercepts oracle engine runs to compare real native subprocess results."
+
+[[ignore]]
+rules = ["LIT304"]
+paths = ["tests/test_launcher.py", "tests/test_packaging.py"]
+reason = "Packaging tests isolate exec replacement, host platform detection and release downloads without replacing the test process or using the network."

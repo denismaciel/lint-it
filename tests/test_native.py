@@ -33,7 +33,16 @@ def test_native_stateful_cli_matches_python(tmp_path: Path, output: str) -> None
         processes = [
             subprocess.run(command + list(args), cwd=root, text=True, capture_output=True)
             for root, command in zip(
-                roots, [[sys.executable, "-m", "lint_it"], [str(BINARY)]], strict=True
+                roots,
+                [
+                    [
+                        sys.executable,
+                        "-c",
+                        "from lint_it.cli import main; raise SystemExit(main())",
+                    ],
+                    [str(BINARY)],
+                ],
+                strict=True,
             )
         ]
         left, right = processes

@@ -1,8 +1,8 @@
 # Native lint-it
 
 Standalone Rust implementation of lint-it's 23 registered rules and seven CLI
-commands. The Python implementation remains the reference and the existing
-Python distribution is unchanged.
+commands. The Python distribution bundles this executable and invokes it from
+`lint-it` and `python -m lint_it`. The Python implementation remains the reference.
 
 ```sh
 # Rust >= 1.97, a C compiler and make (jemalloc); validated with Rust 1.99

@@ -128,7 +128,12 @@ def main() -> None:
         for jobs in args.jobs:
             options = ["check", "--root", str(path), "--format", "json", "--jobs", str(jobs)]
             commands = {
-                "python": [sys.executable, "-m", "lint_it", *options],
+                "python": [
+                    sys.executable,
+                    "-c",
+                    "from lint_it.cli import main; raise SystemExit(main())",
+                    *options,
+                ],
                 "rust": [str(args.binary.resolve()), *options],
             }
             if args.baseline_binary:
