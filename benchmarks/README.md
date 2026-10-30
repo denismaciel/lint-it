@@ -74,6 +74,23 @@ uv run python benchmarks/compare.py --project requests --project flask --runs 7 
   --baseline-binary /path/to/original/lint-it-rust --output benchmarks/optimized-results.json
 ```
 
+## Eight-worker follow-up
+
+[eight-worker-results.json](eight-worker-results.json) records seven full
+Python/original-Rust/optimized-Rust comparisons at eight workers, followed by
+11 alternating four/eight-worker pairs on the optimized binary. Each pair checks
+complete JSON and exit status against Python after one warmup pair.
+
+| Project | 4 workers | 8 workers | 8-worker speedup |
+| --- | ---: | ---: | ---: |
+| Requests | 327 ms | 312 ms | 1.05× |
+| Flask | 357 ms | 354 ms | 1.01× |
+
+Several unrelated Rust compilations were running during this follow-up. Absolute
+times are not comparable to the earlier optimization results. Under this load,
+eight workers show little benefit; these measurements do not establish scaling
+on an idle host. Every output still matches Python exactly.
+
 ## Original port results (historical)
 
 Original measurements are recorded in `results.json`; the table below is generated
