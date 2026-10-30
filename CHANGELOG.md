@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.18.0
+
+### Layouts
+
+- **Fakes next to production code.** In `domains`, `fakes.py`, `fake.py` and
+  `fakes/` anywhere under the package are `test`, so an in-memory repository
+  can sit beside the port it implements.
+
+### Rules
+
+- **LIT101 keeps test code out of production.** Layers without a dependency
+  table, such as boundary and transaction, may still import anything except
+  test code; only test modules may import test modules. A composition root
+  can no longer wire a fake into production.
+
+### Upgrading
+
+- Boundary or transaction modules that import a `test` or `test-support`
+  package get `LIT101` findings. Record deliberate edges with
+  `[[dependency_overrides]]` or `lint-it baseline`.
+
 ## 0.17.0
 
 ### Layouts
