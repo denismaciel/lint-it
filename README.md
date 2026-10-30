@@ -108,6 +108,8 @@ A package's `layout` maps paths to layers. The built-in layouts are `domains`
 `integrations/`), `hexagonal` (`domain/`, `application/`, `adapters/`, `web/`),
 `flat` (everything is shell, except `model.py`, `core.py`, `policy.py`,
 `ports.py`, `adapters/` and `cli.py`), `boundary`, and `test-support`. A
+conventional module may grow into a package of the same name: the files of
+`domains/orders/core/` are core like `domains/orders/core.py`. A
 package's `kind` (`server`, `client` or `library`) controls whether other
 packages may depend on it. Custom layers (`[layers.<name>]`) follow a built-in
 layer's rules with their own dependency policy.

@@ -1,4 +1,6 @@
-"""Built-in file layouts. Within a layout the last matching glob wins. Every layout
+"""Built-in file layouts. Within a layout the last matching glob wins. A conventional
+module such as ``core.py`` may grow into a package of the same name, whose files
+take its layer. Every layout
 follows its own globs with the conventional patterns and ends with the package
 markers; a custom layout's globs come after the conventions, so they can
 reclassify tests, scripts or migrations, but never package markers."""
@@ -39,15 +41,29 @@ _DOMAIN_SLICES = _patterns(
     ("src/*/domains/**/event.py", Layer.CORE),
     ("src/*/domains/**/ports.py", Layer.PORT),
     ("src/*/domains/**/service.py", Layer.SHELL),
+    ("src/*/domains/*/**/boundary/**/*.py", Layer.BOUNDARY),
+    ("src/*/domains/*/**/model/**/*.py", Layer.CORE),
+    ("src/*/domains/*/**/core/**/*.py", Layer.CORE),
+    ("src/*/domains/*/**/policy/**/*.py", Layer.CORE),
+    ("src/*/domains/*/**/event/**/*.py", Layer.CORE),
+    ("src/*/domains/*/**/ports/**/*.py", Layer.PORT),
+    ("src/*/domains/*/**/service/**/*.py", Layer.SHELL),
     ("src/*/domains/**/persistence/**/*.py", Layer.ADAPTER),
     ("src/*/projections/**/model.py", Layer.CORE),
     ("src/*/projections/**/ports.py", Layer.PORT),
     ("src/*/projections/**/service.py", Layer.SHELL),
+    ("src/*/projections/*/**/model/**/*.py", Layer.CORE),
+    ("src/*/projections/*/**/ports/**/*.py", Layer.PORT),
+    ("src/*/projections/*/**/service/**/*.py", Layer.SHELL),
     ("src/*/projections/**/persistence/**/*.py", Layer.ADAPTER),
     ("src/*/shared/model.py", Layer.CORE),
     ("src/*/shared/core.py", Layer.CORE),
     ("src/*/shared/policy.py", Layer.CORE),
     ("src/*/shared/ports.py", Layer.PORT),
+    ("src/*/shared/model/**/*.py", Layer.CORE),
+    ("src/*/shared/core/**/*.py", Layer.CORE),
+    ("src/*/shared/policy/**/*.py", Layer.CORE),
+    ("src/*/shared/ports/**/*.py", Layer.PORT),
     ("src/*/shared/persistence/**/*.py", Layer.ADAPTER),
 )
 
@@ -91,8 +107,13 @@ FLAT = _patterns(
     ("src/*/core.py", Layer.CORE),
     ("src/*/policy.py", Layer.CORE),
     ("src/*/ports.py", Layer.PORT),
+    ("src/*/model/**/*.py", Layer.CORE),
+    ("src/*/core/**/*.py", Layer.CORE),
+    ("src/*/policy/**/*.py", Layer.CORE),
+    ("src/*/ports/**/*.py", Layer.PORT),
     ("src/*/adapters/**/*.py", Layer.ADAPTER),
     ("src/*/cli.py", Layer.BOUNDARY),
+    ("src/*/cli/**/*.py", Layer.BOUNDARY),
     ("src/*/__main__.py", Layer.BOUNDARY),
     ("src/*/development.py", Layer.BOUNDARY),
 )

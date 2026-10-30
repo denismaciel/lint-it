@@ -51,6 +51,15 @@ Built-in layouts: `domains`, `hexagonal`, `flat`, `boundary` (every source file
 is a boundary) and `test-support` (every source file is test code). Run
 `lint-it classify` to see which glob matched each file.
 
+In `domains` and `flat`, a conventional module can grow into a package of the
+same name without a manifest change: `domains/orders/core/pricing.py` is core
+like `domains/orders/core.py`, and `ports/`, `service/`, `model/`, `policy/`,
+`event/`, `boundary/` and, in `flat`, `cli/` follow their module's layer. A file
+takes its package's layer whatever its own name, so `core/ports.py` is core;
+only `persistence/` reclassifies files below it. In `domains` and `projections`
+the package must sit inside a domain, so a domain named `policy` or `event` is
+not affected.
+
 Every layout includes these conventional patterns, after the built-in layout's
 own globs:
 
