@@ -56,7 +56,9 @@ same name without a manifest change: `domains/orders/core/pricing.py` is core
 like `domains/orders/core.py`, and `ports/`, `service/`, `model/`, `policy/`,
 `event/`, `boundary/` and, in `flat`, `cli/` follow their module's layer. A file
 takes its package's layer whatever its own name, so `core/ports.py` is core;
-only `persistence/` reclassifies files below it. In `domains` and `projections`
+only `persistence/` reclassifies files below it. In `domains`, a top-level
+`db/` package is an adapter, except `db/unit_of_work` (module or package), which
+is a transaction. In `domains` and `projections`
 the package must sit inside a domain, so a domain named `policy` or `event` is
 not affected.
 

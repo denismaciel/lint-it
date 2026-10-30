@@ -105,7 +105,7 @@ the built-in ones (a Temporal workflow is a deterministic router). Then:
 
 A package's `layout` maps paths to layers. The built-in layouts are `domains`
 (`src/<pkg>/domains/<domain>/{core,model,policy,ports,service}.py`, `app/`,
-`integrations/`), `hexagonal` (`domain/`, `application/`, `adapters/`, `web/`),
+`db/`, `integrations/`), `hexagonal` (`domain/`, `application/`, `adapters/`, `web/`),
 `flat` (everything is shell, except `model.py`, `core.py`, `policy.py`,
 `ports.py`, `adapters/` and `cli.py`), `boundary`, and `test-support`. A
 conventional module may grow into a package of the same name: the files of
