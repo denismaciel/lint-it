@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.16.0
+
+### Rules
+
+- **LIT104 `cross-domain-import`.** A module under `<package>/domains/<name>/`
+  may import another domain only when `[domains]` declares the dependency,
+  and then only that domain's core and shell modules; its ports,
+  `persistence/` and boundaries stay private. Imports are followed through
+  package initializers and re-exports, and `[[dependency_overrides]]` exempts
+  one edge.
+
+### Manifest
+
+- **`[domains]`** maps each domain to the domains it may import. The graph is
+  validated on load: every named domain needs its own entry, and
+  self-dependencies and cycles are manifest errors that report the cycle. A
+  declared domain without a `domains/<name>/` package is a `LIT003` finding.
+
+### Upgrading
+
+- Workspaces whose domains already import each other get `LIT104` findings
+  until they declare `[domains]`, or record them with `lint-it baseline`.
+
 ## 0.15.0
 
 ### Layouts
