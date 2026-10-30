@@ -139,6 +139,7 @@ fn set_jobs(jobs: Option<u16>) -> Result<(), String> {
     Ok(())
 }
 fn execute(command: Command) -> Result<u8, String> {
+    let _span = lint_it_rust::profile::span("command");
     match command {
         Command::Check {
             paths,
@@ -163,7 +164,11 @@ fn execute(command: Command) -> Result<u8, String> {
             if !output.is_empty() {
                 println!("{output}")
             };
-            Ok(u8::from(!result.findings.is_empty()))
+            let exit_code = u8::from(!result.findings.is_empty());
+            let drop_span = lint_it_rust::profile::span("workspace_drop");
+            drop(w);
+            drop(drop_span);
+            Ok(exit_code)
         }
         Command::Report {
             paths,
@@ -367,7 +372,9 @@ fn render_baseline(counts: &BTreeMap<(String, String, String), usize>) -> String
     format!("{{\n  \"version\": 1,\n  \"findings\": {body}\n}}\n")
 }
 fn main() -> ExitCode {
-    match execute(Cli::parse().command) {
+    let result = execute(Cli::parse().command);
+    lint_it_rust::profile::print();
+    match result {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
             eprintln!("lint-it: {error}");

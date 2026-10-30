@@ -11,11 +11,12 @@ not compare lint-it's rules with Ruff's different rules.
 uv sync --locked
 cargo build --locked --release --manifest-path rust/Cargo.toml
 uv run python -m pytest -p benchmarks.differential_plugin
-uv run python benchmarks/compare.py --runs 5 --jobs 1 4
+uv run python benchmarks/compare.py --project requests --project flask --runs 7 --jobs 1 4
 ```
 
 The runner downloads immutable revisions listed in [projects.json](projects.json)
-from Requests, Flask and Django into ignored `benchmarks/target/`. No upstream
+into ignored `benchmarks/target/`. Requests and Flask are the default selection;
+CI also uses only those two projects. No upstream
 project code is imported or executed. It overlays the **same** explicit lint-it
 manifest for both executables: Python files are core, test directories are test,
 examples are boundary, and package initializers are markers. This intentionally
@@ -23,14 +24,13 @@ exercises the rules; the resulting findings aren't recommendations for those
 projects' architectures. Upstream source files remain unchanged.
 
 Requests and Flask exercise `src` package identities and cross-file resolution.
-Django provides a much larger tree and an intentionally invalid Python fixture.
-The existing Python implementation only assigns module identities beneath `src/`;
-the Rust implementation preserves that behavior for Django's flat tree.
+The original report also includes historical Django measurements. Django was
+not rerun for the optimization report.
 
 For each project and worker setting the runner:
 
 1. Warms both commands once and compares their complete JSON and exit statuses.
-2. Runs five measured invocations of each, alternating execution order.
+2. Runs seven measured invocations of each, rotating execution order.
 3. Requires every measured result to equal the reference, including filename,
    line, byte column, rule, message, target, package/file counts and suppressions.
 4. Records every elapsed sample, median, speedup and input/output hashes in
@@ -42,9 +42,41 @@ its normal process-pool policy: at least 150 files per worker. Thus `--jobs 4`
 still runs Requests and Flask serially in Python, while Rust uses four Rayon
 threads. The one-worker rows provide the direct serial comparison.
 
-## Results
+## Optimization results
 
-Final measurements are recorded in `results.json`; the table below is generated
+Seven runs per configuration, comparing Python, the original Rust binary from
+`020dcf8`, and the optimized Rust binary in the same run. Complete JSON and exit
+statuses match across all three binaries on every invocation. Raw timings and
+binary/input hashes: [optimized-results.json](optimized-results.json).
+
+| Project | Workers | Python | Rust before | Rust after | Rust gain | vs Python |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Requests | 1 | 0.998 s | 0.419 s | 0.299 s | 1.40× | 3.34× |
+| Requests | 4 | 1.010 s | 0.194 s | 0.127 s | 1.53× | 7.97× |
+| Flask | 1 | 1.096 s | 0.510 s | 0.342 s | 1.49× | 3.20× |
+| Flask | 4 | 1.173 s | 0.177 s | 0.146 s | 1.21× | 8.04× |
+
+The changes remove recursive subtree copies during AST construction and reuse
+complete import traversals within a command. Duplicate loaded targets are removed
+in first-encounter order; importer-specific policy and source locations remain
+separate. No persistent analysis cache is used.
+
+Initial single-worker profiling put AST conversion at 38–41% of command time,
+versus 3–5 ms for Ruff parsing. Dependency checks took another 16–26%. These
+measurements motivated the two changes; final benchmarks use uninstrumented
+release binaries. Typed AST storage and cheaper symbol lookups remain possible
+future improvements.
+
+To compare a saved original binary with the current release:
+
+```sh
+uv run python benchmarks/compare.py --project requests --project flask --runs 7 --jobs 1 4 \
+  --baseline-binary /path/to/original/lint-it-rust --output benchmarks/optimized-results.json
+```
+
+## Original port results (historical)
+
+Original measurements are recorded in `results.json`; the table below is generated
 from those medians after the equivalence gates pass.
 
 | Project | Workers | Files | Findings | Python | Rust | Speedup |
@@ -63,7 +95,7 @@ configuration; the advantage varies considerably with project size and worker po
 
 ## Equivalence coverage
 
-The native regression run passes 577 pytest cases, including 456 comparisons of
+The native regression run passes 578 pytest cases, including 457 comparisons of
 real workspace checks with the Python engine. It also compares CLI rendering and
 manifest rejection, and exercises native baseline creation/pruning against
 Python. Twelve Rust unit tests cover parser locations, alias scopes, globs,

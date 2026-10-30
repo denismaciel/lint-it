@@ -9,6 +9,9 @@ license = "MIT"
 name = "lint-it-rust"
 path = "src/main.rs"
 
+[features]
+profile = []
+
 [dependencies]
 ruff_python_parser = "=0.0.20"
 ruff_python_ast = "=0.0.20"

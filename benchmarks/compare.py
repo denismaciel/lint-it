@@ -71,6 +71,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--work", type=Path, default=ROOT / "benchmarks/target")
     parser.add_argument("--binary", type=Path, default=ROOT / "rust/target/release/lint-it-rust")
+    parser.add_argument("--baseline-binary", type=Path)
     parser.add_argument("--runs", type=int, default=7)
     parser.add_argument("--jobs", type=int, nargs="+", default=[1, 4])
     parser.add_argument("--project", action="append")
@@ -88,6 +89,11 @@ def main() -> None:
         "binary_sha256": (
             hashlib.sha256(args.binary.read_bytes()).hexdigest() if args.binary.exists() else None
         ),
+        "baseline_binary_sha256": (
+            hashlib.sha256(args.baseline_binary.read_bytes()).hexdigest()
+            if args.baseline_binary
+            else None
+        ),
         "rustc": subprocess.check_output(["rustc", "--version"], text=True).strip(),
         "reference_commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
@@ -103,13 +109,14 @@ def main() -> None:
         if Path("/proc/cpuinfo").exists()
         else platform.processor(),
         "method": (
-            "warm filesystem; fresh process; alternating order; "
-            "no analysis cache; complete JSON equality"
+            "warm filesystem; fresh process; rotating order; "
+            "no persistent analysis cache; complete JSON equality"
         ),
         "results": [],
     }
+    selected = args.project or ["requests", "flask"]
     for project in projects:
-        if args.project and project["name"] not in args.project:
+        if project["name"] not in selected:
             continue
         path = prepare(project, args.work.resolve())
         if args.prepare_only:
@@ -124,6 +131,8 @@ def main() -> None:
                 "python": [sys.executable, "-m", "lint_it", *options],
                 "rust": [str(args.binary.resolve()), *options],
             }
+            if args.baseline_binary:
+                commands["rust_before"] = [str(args.baseline_binary.resolve()), *options]
             # Warm up and require complete diagnostics and summary equality BEFORE timing.
             _, expected, expected_exit = invoke(commands["python"])
             _, actual, actual_exit = invoke(commands["rust"])
@@ -133,11 +142,15 @@ def main() -> None:
                         json.dumps(value, indent=2)
                     )
                 raise AssertionError(f"{project['name']}: outputs differ; inspect {args.work}")
+            if args.baseline_binary:
+                _, baseline, baseline_exit = invoke(commands["rust_before"])
+                if (baseline, baseline_exit) != (expected, expected_exit):
+                    raise AssertionError(f"{project['name']}: baseline Rust differs")
             timings = {name: [] for name in commands}
             for index in range(args.runs):
                 order = list(commands)
-                if index % 2:
-                    order.reverse()
+                offset = index % len(order)
+                order = order[offset:] + order[:offset]
                 for name in order:
                     elapsed, result, exit_code = invoke(commands[name])
                     if (result, exit_code) != (expected, expected_exit):
@@ -160,6 +173,8 @@ def main() -> None:
                 "median_seconds": medians,
                 "speedup": medians["python"] / medians["rust"],
             }
+            if args.baseline_binary:
+                row["rust_speedup"] = medians["rust_before"] / medians["rust"]
             report["results"].append(row)
             print(
                 f"{project['name']} jobs={jobs}: {row['files']} files, {row['findings']} findings, "

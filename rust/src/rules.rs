@@ -45,6 +45,7 @@ fn children(node: &Node) -> Vec<&Node> {
     out
 }
 pub fn check(file: &Source, workspace: &Workspace) -> Vec<Finding> {
+    let _span = crate::profile::span("local_rules");
     let mut out = Vec::new();
     let inner = file.has_layer(&["core", "port"]);
     let deterministic = file.deterministic(workspace);
@@ -132,11 +133,29 @@ pub fn check(file: &Source, workspace: &Workspace) -> Vec<Finding> {
             }
         }
     }
-    simple::check(file, workspace, &mut out);
-    defaults::check(file, &mut out);
-    ambient::check(file, &mut out);
-    mutation::check(file, &mut out);
-    capabilities::check(file, workspace, &mut out);
-    subclass::check(file, workspace, &mut out);
+    {
+        let _span = crate::profile::span("rule_simple");
+        simple::check(file, workspace, &mut out);
+    }
+    {
+        let _span = crate::profile::span("rule_defaults");
+        defaults::check(file, &mut out);
+    }
+    {
+        let _span = crate::profile::span("rule_ambient");
+        ambient::check(file, &mut out);
+    }
+    {
+        let _span = crate::profile::span("rule_mutation");
+        mutation::check(file, &mut out);
+    }
+    {
+        let _span = crate::profile::span("rule_capabilities");
+        capabilities::check(file, workspace, &mut out);
+    }
+    {
+        let _span = crate::profile::span("rule_subclass");
+        subclass::check(file, workspace, &mut out);
+    }
     out
 }

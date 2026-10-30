@@ -71,6 +71,7 @@ fn loaded<'a>(module: &str, name: Option<&str>, ws: &'a Workspace) -> Vec<&'a So
     let mut pending = vec![(module.to_string(), name.map(str::to_owned), false)];
     let mut seen = HashSet::new();
     let mut expanded = HashSet::new();
+    let mut emitted = HashSet::new();
     let mut result = vec![];
     while let Some((m, n, transitive)) = pending.pop() {
         if !seen.insert((m.clone(), n.clone(), transitive)) {
@@ -92,7 +93,9 @@ fn loaded<'a>(module: &str, name: Option<&str>, ws: &'a Workspace) -> Vec<&'a So
             }
         }
         for f in loaded {
-            result.push(f);
+            if emitted.insert(&f.path) {
+                result.push(f);
+            }
             if !expanded.contains(&f.path) && (marker(f) || transitive) {
                 expanded.insert(&f.path);
                 pending.extend(
@@ -155,6 +158,7 @@ fn domain(module: &str) -> Option<(&str, &str)> {
     }
 }
 pub fn check(file: &Source, ws: &Workspace) -> Vec<Finding> {
+    let _span = crate::profile::span("dependencies");
     let mut out = vec![];
     if file.classification.is_none() {
         let mut message = "file matches no layer in its package layout".to_string();
@@ -178,7 +182,7 @@ pub fn check(file: &Source, ws: &Workspace) -> Vec<Finding> {
     let mut seen_domain = HashSet::new();
     for (node, m, n) in &imports {
         if check_layer || owner.is_some() {
-            for target in loaded(m, n.as_deref(), ws) {
+            for target in ws.loaded_sources(m, n.as_deref(), || loaded(m, n.as_deref(), ws)) {
                 let module = target.module.as_deref().unwrap_or("");
                 let overridden = ws.dependency_overridden(file, target);
                 if check_layer && let Some(c) = &target.classification {

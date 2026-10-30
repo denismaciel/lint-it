@@ -52,7 +52,7 @@ cargo test --locked --release --manifest-path rust/Cargo.toml
 cargo clippy --locked --release --manifest-path rust/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path rust/Cargo.toml --check
 uv run python -m pytest -p benchmarks.differential_plugin
-uv run python benchmarks/compare.py --runs 5 --jobs 1 4
+uv run python benchmarks/compare.py --project requests --project flask --runs 5 --jobs 1 4
 ```
 
 The differential pytest plugin runs the existing Python fixtures and compares
@@ -70,3 +70,21 @@ all Python input: uncommon malformed Python/TOML/JSON can retain upstream parser
 wording, and unusual dynamic class-base expressions may render differently from
 CPython's `ast.unparse`. The supported manifests, fixtures and pinned project
 corpora are the regression contract enforced by CI.
+
+## Profiling
+
+Build with `cargo build --release --features profile --manifest-path rust/Cargo.toml`
+and run `check --jobs 1`. The command writes JSON phase timings to stderr;
+stdout remains the normal diagnostics. Timings are inclusive, and parallel
+runs sum worker times, so phase totals must not be added together. Build again
+without `--features profile` before equivalence checks or performance reporting;
+normal builds compile instrumentation away.
+
+The adapter moves owned subtrees into parents instead of serializing borrowed
+values with `json!`, which previously copied descendants at each nesting level.
+Dependency analysis caches complete loaded-module traversals per workspace,
+preserving their first-encounter order and removing duplicate targets. Recursive
+partial traversals remain uncached because cycle guards affect their results.
+Layer policy, overrides and finding locations are still evaluated per importer.
+The cache stores source indices, is shared across workers, and is discarded at
+command exit; concurrent cache misses can compute the same result independently.

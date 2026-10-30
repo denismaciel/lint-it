@@ -122,6 +122,23 @@ def test_lit101_follows_initializer_helpers_through_cycles(project: Project) -> 
     ]
 
 
+def test_repeated_cyclic_imports_keep_importer_layers_and_locations(project: Project) -> None:
+    project.write(
+        {
+            API: "",
+            "src/example/__init__.py": "from example.domains.orders import model\n",
+            MODEL: "import example\nfrom example.app.api import create_app\n",
+            CORE: "from example.domains.orders.model import Order\n" * 2,
+            SERVICE: "\nfrom example.domains.orders.model import Order\n",
+        }
+    )
+    findings = project.findings(CORE, SERVICE)
+    assert [(f.filename, f.code, f.line, f.message) for f in findings] == [
+        (CORE, "LIT101", 1, "core cannot import boundary module example.app.api"),
+        (SERVICE, "LIT101", 2, "shell cannot import boundary module example.app.api"),
+    ]
+
+
 def test_lit101_ignores_imports_deferred_in_initializer_functions(project: Project) -> None:
     project.write(
         {

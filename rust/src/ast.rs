@@ -4,6 +4,15 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use serde_json::{Value, json};
 use std::cell::Cell;
 use std::collections::VecDeque;
+// Unlike json!, this builder moves child values into their parent. Serializing
+// a borrowed Value here would recursively copy each subtree at every ancestor.
+macro_rules! node_fields {
+    ({ $($key:literal : $value:expr),* $(,)? }) => {
+        Value::Object(serde_json::Map::from_iter([
+            $(($key.to_owned(), Value::from($value))),*
+        ]))
+    };
+}
 pub type Node = Value;
 pub use crate::model::ParseFailure;
 pub fn kind(n: &Node) -> &str {
@@ -48,6 +57,7 @@ pub fn walk(n: &Node) -> Vec<&Node> {
 }
 pub fn parse(source: &str) -> Result<Node, ParseFailure> {
     let adapter = Adapter::new(source);
+    let parser_span = crate::profile::span("ruff_parse");
     let parsed = ruff_python_parser::parse_module(source).map_err(|error| {
         let mut offset = error.location.start().to_usize();
         let mut message = parse_error_message(&error.error);
@@ -73,10 +83,12 @@ pub fn parse(source: &str) -> Result<Node, ParseFailure> {
             message,
         }
     })?;
+    drop(parser_span);
+    let _span = crate::profile::span("ast_adapter");
     Ok(adapter.node(
         "Module",
         parsed.syntax().range,
-        json!({"body":adapter.stmts(&parsed.syntax().body),"type_ignores":[]}),
+        node_fields!({"body":adapter.stmts(&parsed.syntax().body),"type_ignores":Vec::<Value>::new()}),
     ))
 }
 pub fn parse_expression(source: &str) -> Option<Node> {
@@ -150,7 +162,11 @@ impl<'a> Adapter<'a> {
         fields
     }
     fn tag(&self, value: impl std::fmt::Debug) -> Node {
-        self.node(&format!("{value:?}"), TextRange::default(), json!({}))
+        self.node(
+            &format!("{value:?}"),
+            TextRange::default(),
+            node_fields!({}),
+        )
     }
     fn opt(&self, e: Option<&py::Expr>) -> Node {
         e.map(|e| self.expr(e)).unwrap_or(Value::Null)
@@ -167,7 +183,7 @@ impl<'a> Adapter<'a> {
                 self.node(
                     "alias",
                     a.range,
-                    json!({"name":a.name.as_str(),"asname":a.asname.as_ref().map(|s|s.as_str())}),
+                    node_fields!({"name":a.name.as_str(),"asname":a.asname.as_ref().map(|s|s.as_str())}),
                 )
             })
             .collect()
@@ -178,24 +194,24 @@ impl<'a> Adapter<'a> {
                 self.node(
                     "keyword",
                     k.range,
-                    json!({"arg":k.arg.as_ref().map(|s|s.as_str()),"value":self.expr(&k.value)}),
+                    node_fields!({"arg":k.arg.as_ref().map(|s|s.as_str()),"value":self.expr(&k.value)}),
                 )
             })
             .collect()
     }
     fn parameter(&self, p: &py::Parameter) -> Node {
-        self.node("arg",TextRange::new(p.name.range().start(),p.range.end()),json!({"arg":p.name.as_str(),"annotation":self.opt(p.annotation.as_deref()),"type_comment":null}))
+        self.node("arg",TextRange::new(p.name.range().start(),p.range.end()),node_fields!({"arg":p.name.as_str(),"annotation":self.opt(p.annotation.as_deref()),"type_comment":Value::Null}))
     }
     fn parameters(&self, p: Option<&py::Parameters>) -> Node {
         let empty = py::Parameters::default();
         let p = p.unwrap_or(&empty);
-        self.node("arguments",p.range,json!({"posonlyargs":p.posonlyargs.iter().map(|a|self.parameter(&a.parameter)).collect::<Vec<_>>(),"args":p.args.iter().map(|a|self.parameter(&a.parameter)).collect::<Vec<_>>(),"vararg":p.vararg.as_deref().map(|a|self.parameter(a)),"kwonlyargs":p.kwonlyargs.iter().map(|a|self.parameter(&a.parameter)).collect::<Vec<_>>(),"kw_defaults":p.kwonlyargs.iter().map(|a|self.opt(a.default.as_deref())).collect::<Vec<_>>(),"kwarg":p.kwarg.as_deref().map(|a|self.parameter(a)),"defaults":p.posonlyargs.iter().chain(&p.args).filter_map(|a|a.default.as_deref()).map(|a|self.expr(a)).collect::<Vec<_>>()}))
+        self.node("arguments",p.range,node_fields!({"posonlyargs":p.posonlyargs.iter().map(|a|self.parameter(&a.parameter)).collect::<Vec<_>>(),"args":p.args.iter().map(|a|self.parameter(&a.parameter)).collect::<Vec<_>>(),"vararg":p.vararg.as_deref().map(|a|self.parameter(a)),"kwonlyargs":p.kwonlyargs.iter().map(|a|self.parameter(&a.parameter)).collect::<Vec<_>>(),"kw_defaults":p.kwonlyargs.iter().map(|a|self.opt(a.default.as_deref())).collect::<Vec<_>>(),"kwarg":p.kwarg.as_deref().map(|a|self.parameter(a)),"defaults":p.posonlyargs.iter().chain(&p.args).filter_map(|a|a.default.as_deref()).map(|a|self.expr(a)).collect::<Vec<_>>()}))
     }
     fn types(&self, p: Option<&py::TypeParams>) -> Vec<Node> {
         p.map(|p|p.iter().map(|p|match p {
-        py::TypeParam::TypeVar(p)=>self.node("TypeVar",p.range,json!({"name":p.name.as_str(),"bound":self.opt(p.bound.as_deref()),"default_value":self.opt(p.default.as_deref())})),
-        py::TypeParam::TypeVarTuple(p)=>self.node("TypeVarTuple",p.range,json!({"name":p.name.as_str(),"default_value":self.opt(p.default.as_deref())})),
-        py::TypeParam::ParamSpec(p)=>self.node("ParamSpec",p.range,json!({"name":p.name.as_str(),"default_value":self.opt(p.default.as_deref())})),
+        py::TypeParam::TypeVar(p)=>self.node("TypeVar",p.range,node_fields!({"name":p.name.as_str(),"bound":self.opt(p.bound.as_deref()),"default_value":self.opt(p.default.as_deref())})),
+        py::TypeParam::TypeVarTuple(p)=>self.node("TypeVarTuple",p.range,node_fields!({"name":p.name.as_str(),"default_value":self.opt(p.default.as_deref())})),
+        py::TypeParam::ParamSpec(p)=>self.node("ParamSpec",p.range,node_fields!({"name":p.name.as_str(),"default_value":self.opt(p.default.as_deref())})),
     }).collect()).unwrap_or_default()
     }
     fn stmt(&self, s: &py::Stmt) -> Node {
@@ -206,90 +222,93 @@ impl<'a> Adapter<'a> {
                 } else {
                     "FunctionDef"
                 },
-                json!({"name":n.name.as_str(),"args":self.parameters(Some(&n.parameters)),"body":self.stmts(&n.body),"decorator_list":n.decorator_list.iter().map(|d|self.expr(&d.expression)).collect::<Vec<_>>(),"returns":self.opt(n.returns.as_deref()),"type_comment":null,"type_params":self.types(n.type_params.as_deref())}),
+                node_fields!({"name":n.name.as_str(),"args":self.parameters(Some(&n.parameters)),"body":self.stmts(&n.body),"decorator_list":n.decorator_list.iter().map(|d|self.expr(&d.expression)).collect::<Vec<_>>(),"returns":self.opt(n.returns.as_deref()),"type_comment":Value::Null,"type_params":self.types(n.type_params.as_deref())}),
             ),
             py::Stmt::ClassDef(n) => (
                 "ClassDef",
-                json!({"name":n.name.as_str(),"bases":n.arguments.as_ref().map(|a|self.exprs(&a.args)).unwrap_or_default(),"keywords":n.arguments.as_ref().map(|a|self.keywords(&a.keywords)).unwrap_or_default(),"body":self.stmts(&n.body),"decorator_list":n.decorator_list.iter().map(|d|self.expr(&d.expression)).collect::<Vec<_>>(),"type_params":self.types(n.type_params.as_deref())}),
+                node_fields!({"name":n.name.as_str(),"bases":n.arguments.as_ref().map(|a|self.exprs(&a.args)).unwrap_or_default(),"keywords":n.arguments.as_ref().map(|a|self.keywords(&a.keywords)).unwrap_or_default(),"body":self.stmts(&n.body),"decorator_list":n.decorator_list.iter().map(|d|self.expr(&d.expression)).collect::<Vec<_>>(),"type_params":self.types(n.type_params.as_deref())}),
             ),
-            py::Stmt::Return(n) => ("Return", json!({"value":self.opt(n.value.as_deref())})),
-            py::Stmt::Delete(n) => ("Delete", json!({"targets":self.exprs(&n.targets)})),
+            py::Stmt::Return(n) => (
+                "Return",
+                node_fields!({"value":self.opt(n.value.as_deref())}),
+            ),
+            py::Stmt::Delete(n) => ("Delete", node_fields!({"targets":self.exprs(&n.targets)})),
             py::Stmt::TypeAlias(n) => (
                 "TypeAlias",
-                json!({"name":self.expr(&n.name),"type_params":self.types(n.type_params.as_deref()),"value":self.expr(&n.value)}),
+                node_fields!({"name":self.expr(&n.name),"type_params":self.types(n.type_params.as_deref()),"value":self.expr(&n.value)}),
             ),
             py::Stmt::Assign(n) => (
                 "Assign",
-                json!({"targets":self.exprs(&n.targets),"value":self.expr(&n.value),"type_comment":null}),
+                node_fields!({"targets":self.exprs(&n.targets),"value":self.expr(&n.value),"type_comment":Value::Null}),
             ),
             py::Stmt::AugAssign(n) => (
                 "AugAssign",
-                json!({"target":self.expr(&n.target),"op":self.tag(n.op),"value":self.expr(&n.value)}),
+                node_fields!({"target":self.expr(&n.target),"op":self.tag(n.op),"value":self.expr(&n.value)}),
             ),
             py::Stmt::AnnAssign(n) => (
                 "AnnAssign",
-                json!({"target":self.expr(&n.target),"annotation":self.expr(&n.annotation),"value":self.opt(n.value.as_deref()),"simple":usize::from(n.simple)}),
+                node_fields!({"target":self.expr(&n.target),"annotation":self.expr(&n.annotation),"value":self.opt(n.value.as_deref()),"simple":usize::from(n.simple)}),
             ),
             py::Stmt::For(n) => (
                 if n.is_async { "AsyncFor" } else { "For" },
-                json!({"target":self.expr(&n.target),"iter":self.expr(&n.iter),"body":self.stmts(&n.body),"orelse":self.stmts(&n.orelse),"type_comment":null}),
+                node_fields!({"target":self.expr(&n.target),"iter":self.expr(&n.iter),"body":self.stmts(&n.body),"orelse":self.stmts(&n.orelse),"type_comment":Value::Null}),
             ),
             py::Stmt::While(n) => (
                 "While",
-                json!({"test":self.expr(&n.test),"body":self.stmts(&n.body),"orelse":self.stmts(&n.orelse)}),
+                node_fields!({"test":self.expr(&n.test),"body":self.stmts(&n.body),"orelse":self.stmts(&n.orelse)}),
             ),
             py::Stmt::If(n) => {
                 let mut orelse = vec![];
                 for c in n.elif_else_clauses.iter().rev() {
                     if let Some(test) = &c.test {
-                        orelse=vec![self.node("If",c.range,json!({"test":self.expr(test),"body":self.stmts(&c.body),"orelse":orelse}))];
+                        orelse=vec![self.node("If",c.range,node_fields!({"test":self.expr(test),"body":self.stmts(&c.body),"orelse":orelse}))];
                     } else {
                         orelse = self.stmts(&c.body);
                     }
                 }
                 (
                     "If",
-                    json!({"test":self.expr(&n.test),"body":self.stmts(&n.body),"orelse":orelse}),
+                    node_fields!({"test":self.expr(&n.test),"body":self.stmts(&n.body),"orelse":orelse}),
                 )
             }
             py::Stmt::With(n) => (
                 if n.is_async { "AsyncWith" } else { "With" },
-                json!({"items":n.items.iter().map(|i|self.node("withitem",i.range,json!({"context_expr":self.expr(&i.context_expr),"optional_vars":self.opt(i.optional_vars.as_deref())}))).collect::<Vec<_>>(),"body":self.stmts(&n.body),"type_comment":null}),
+                node_fields!({"items":n.items.iter().map(|i|self.node("withitem",i.range,node_fields!({"context_expr":self.expr(&i.context_expr),"optional_vars":self.opt(i.optional_vars.as_deref())}))).collect::<Vec<_>>(),"body":self.stmts(&n.body),"type_comment":Value::Null}),
             ),
             py::Stmt::Match(n) => (
                 "Match",
-                json!({"subject":self.expr(&n.subject),"cases":n.cases.iter().map(|c|self.node("match_case",c.range,json!({"pattern":self.pattern(&c.pattern),"guard":self.opt(c.guard.as_deref()),"body":self.stmts(&c.body)}))).collect::<Vec<_>>()}),
+                node_fields!({"subject":self.expr(&n.subject),"cases":n.cases.iter().map(|c|self.node("match_case",c.range,node_fields!({"pattern":self.pattern(&c.pattern),"guard":self.opt(c.guard.as_deref()),"body":self.stmts(&c.body)}))).collect::<Vec<_>>()}),
             ),
             py::Stmt::Raise(n) => (
                 "Raise",
-                json!({"exc":self.opt(n.exc.as_deref()),"cause":self.opt(n.cause.as_deref())}),
+                node_fields!({"exc":self.opt(n.exc.as_deref()),"cause":self.opt(n.cause.as_deref())}),
             ),
             py::Stmt::Try(n) => (
                 if n.is_star { "TryStar" } else { "Try" },
-                json!({"body":self.stmts(&n.body),"handlers":n.handlers.iter().map(|h|{let py::ExceptHandler::ExceptHandler(h)=h;self.node("ExceptHandler",h.range,json!({"type":self.opt(h.type_.as_deref()),"name":h.name.as_ref().map(|s|s.as_str()),"body":self.stmts(&h.body)}))}).collect::<Vec<_>>(),"orelse":self.stmts(&n.orelse),"finalbody":self.stmts(&n.finalbody)}),
+                node_fields!({"body":self.stmts(&n.body),"handlers":n.handlers.iter().map(|h|{let py::ExceptHandler::ExceptHandler(h)=h;self.node("ExceptHandler",h.range,node_fields!({"type":self.opt(h.type_.as_deref()),"name":h.name.as_ref().map(|s|s.as_str()),"body":self.stmts(&h.body)}))}).collect::<Vec<_>>(),"orelse":self.stmts(&n.orelse),"finalbody":self.stmts(&n.finalbody)}),
             ),
             py::Stmt::Assert(n) => (
                 "Assert",
-                json!({"test":self.expr(&n.test),"msg":self.opt(n.msg.as_deref())}),
+                node_fields!({"test":self.expr(&n.test),"msg":self.opt(n.msg.as_deref())}),
             ),
-            py::Stmt::Import(n) => ("Import", json!({"names":self.aliases(&n.names)})),
+            py::Stmt::Import(n) => ("Import", node_fields!({"names":self.aliases(&n.names)})),
             py::Stmt::ImportFrom(n) => (
                 "ImportFrom",
-                json!({"module":n.module.as_ref().map(|s|s.as_str()),"names":self.aliases(&n.names),"level":n.level}),
+                node_fields!({"module":n.module.as_ref().map(|s|s.as_str()),"names":self.aliases(&n.names),"level":n.level}),
             ),
             py::Stmt::Global(n) => (
                 "Global",
-                json!({"names":n.names.iter().map(|s|s.as_str()).collect::<Vec<_>>()}),
+                node_fields!({"names":n.names.iter().map(|s|s.as_str()).collect::<Vec<_>>()}),
             ),
             py::Stmt::Nonlocal(n) => (
                 "Nonlocal",
-                json!({"names":n.names.iter().map(|s|s.as_str()).collect::<Vec<_>>()}),
+                node_fields!({"names":n.names.iter().map(|s|s.as_str()).collect::<Vec<_>>()}),
             ),
-            py::Stmt::Expr(n) => ("Expr", json!({"value":self.expr(&n.value)})),
-            py::Stmt::Pass(_) => ("Pass", json!({})),
-            py::Stmt::Break(_) => ("Break", json!({})),
-            py::Stmt::Continue(_) => ("Continue", json!({})),
-            py::Stmt::IpyEscapeCommand(_) => ("IpyEscapeCommand", json!({})),
+            py::Stmt::Expr(n) => ("Expr", node_fields!({"value":self.expr(&n.value)})),
+            py::Stmt::Pass(_) => ("Pass", node_fields!({})),
+            py::Stmt::Break(_) => ("Break", node_fields!({})),
+            py::Stmt::Continue(_) => ("Continue", node_fields!({})),
+            py::Stmt::IpyEscapeCommand(_) => ("IpyEscapeCommand", node_fields!({})),
         };
         // Ruff includes decorators in declaration ranges; CPython starts at
         // the declaration keyword. Search only the prefix before the name.
@@ -312,12 +331,12 @@ impl<'a> Adapter<'a> {
         TextRange::new(start, range.end())
     }
     fn generators(&self, g: &[py::Comprehension]) -> Vec<Node> {
-        g.iter().map(|g|self.node("comprehension",g.range,json!({"target":self.expr(&g.target),"iter":self.expr(&g.iter),"ifs":self.exprs(&g.ifs),"is_async":usize::from(g.is_async)}))).collect()
+        g.iter().map(|g|self.node("comprehension",g.range,node_fields!({"target":self.expr(&g.target),"iter":self.expr(&g.iter),"ifs":self.exprs(&g.ifs),"is_async":usize::from(g.is_async)}))).collect()
     }
     fn interpolated(&self, e: &py::InterpolatedStringElement) -> Node {
         match e {
-        py::InterpolatedStringElement::Literal(n)=>self.node("Constant",n.range,json!({"value":n.value.as_ref(),"kind":null})),
-        py::InterpolatedStringElement::Interpolation(n)=>self.node("FormattedValue",n.range,json!({"value":self.expr(&n.expression),"conversion":n.conversion as i32,"format_spec":n.format_spec.as_ref().map(|f|self.node("JoinedStr",TextRange::new(f.range.start() - TextSize::from(1), f.range.end()),json!({"values":f.elements.iter().map(|e|self.interpolated(e)).collect::<Vec<_>>()})))})),
+        py::InterpolatedStringElement::Literal(n)=>self.node("Constant",n.range,node_fields!({"value":n.value.as_ref(),"kind":Value::Null})),
+        py::InterpolatedStringElement::Interpolation(n)=>self.node("FormattedValue",n.range,node_fields!({"value":self.expr(&n.expression),"conversion":n.conversion as i32,"format_spec":n.format_spec.as_ref().map(|f|self.node("JoinedStr",TextRange::new(f.range.start() - TextSize::from(1), f.range.end()),node_fields!({"values":f.elements.iter().map(|e|self.interpolated(e)).collect::<Vec<_>>()})))})),
     }
     }
     fn set_range(&self, node: &mut Node, range: TextRange) {
@@ -335,7 +354,7 @@ impl<'a> Adapter<'a> {
                 py::FStringPartRef::Literal(n) => values.push(self.node(
                     "Constant",
                     n.range,
-                    json!({"value":n.as_str(),"kind":null}),
+                    node_fields!({"value":n.as_str(),"kind":Value::Null}),
                 )),
                 py::FStringPartRef::FString(n) => {
                     for element in &n.elements {
@@ -349,7 +368,7 @@ impl<'a> Adapter<'a> {
                                     start,
                                     start + TextSize::try_from(debug.as_str().len()).unwrap(),
                                 ),
-                                json!({"value":debug.as_str(),"kind":null}),
+                                node_fields!({"value":debug.as_str(),"kind":Value::Null}),
                             ));
                         }
                         values.push(self.interpolated(element));
@@ -376,144 +395,165 @@ impl<'a> Adapter<'a> {
         let (name, fields) = match e {
             py::Expr::BoolOp(n) => (
                 "BoolOp",
-                json!({"op":self.tag(n.op),"values":self.exprs(&n.values)}),
+                node_fields!({"op":self.tag(n.op),"values":self.exprs(&n.values)}),
             ),
             py::Expr::Named(n) => (
                 "NamedExpr",
-                json!({"target":self.expr(&n.target),"value":self.expr(&n.value)}),
+                node_fields!({"target":self.expr(&n.target),"value":self.expr(&n.value)}),
             ),
             py::Expr::BinOp(n) => (
                 "BinOp",
-                json!({"left":self.expr(&n.left),"op":self.tag(n.op),"right":self.expr(&n.right)}),
+                node_fields!({"left":self.expr(&n.left),"op":self.tag(n.op),"right":self.expr(&n.right)}),
             ),
             py::Expr::UnaryOp(n) => (
                 "UnaryOp",
-                json!({"op":self.tag(n.op),"operand":self.expr(&n.operand)}),
+                node_fields!({"op":self.tag(n.op),"operand":self.expr(&n.operand)}),
             ),
             py::Expr::Lambda(n) => (
                 "Lambda",
-                json!({"args":self.parameters(n.parameters.as_deref()),"body":self.expr(&n.body)}),
+                node_fields!({"args":self.parameters(n.parameters.as_deref()),"body":self.expr(&n.body)}),
             ),
             py::Expr::If(n) => (
                 "IfExp",
-                json!({"test":self.expr(&n.test),"body":self.expr(&n.body),"orelse":self.expr(&n.orelse)}),
+                node_fields!({"test":self.expr(&n.test),"body":self.expr(&n.body),"orelse":self.expr(&n.orelse)}),
             ),
             py::Expr::Dict(n) => (
                 "Dict",
-                json!({"keys":n.items.iter().map(|i|self.opt(i.key.as_ref())).collect::<Vec<_>>(),"values":n.items.iter().map(|i|self.expr(&i.value)).collect::<Vec<_>>()}),
+                node_fields!({"keys":n.items.iter().map(|i|self.opt(i.key.as_ref())).collect::<Vec<_>>(),"values":n.items.iter().map(|i|self.expr(&i.value)).collect::<Vec<_>>()}),
             ),
-            py::Expr::Set(n) => ("Set", json!({"elts":self.exprs(&n.elts)})),
+            py::Expr::Set(n) => ("Set", node_fields!({"elts":self.exprs(&n.elts)})),
             py::Expr::ListComp(n) => (
                 "ListComp",
-                json!({"elt":self.expr(&n.elt),"generators":self.generators(&n.generators)}),
+                node_fields!({"elt":self.expr(&n.elt),"generators":self.generators(&n.generators)}),
             ),
             py::Expr::SetComp(n) => (
                 "SetComp",
-                json!({"elt":self.expr(&n.elt),"generators":self.generators(&n.generators)}),
+                node_fields!({"elt":self.expr(&n.elt),"generators":self.generators(&n.generators)}),
             ),
             py::Expr::DictComp(n) => (
                 "DictComp",
-                json!({"key":self.opt(n.key.as_deref()),"value":self.expr(&n.value),"generators":self.generators(&n.generators)}),
+                node_fields!({"key":self.opt(n.key.as_deref()),"value":self.expr(&n.value),"generators":self.generators(&n.generators)}),
             ),
             py::Expr::Generator(n) => (
                 "GeneratorExp",
-                json!({"elt":self.expr(&n.elt),"generators":self.generators(&n.generators)}),
+                node_fields!({"elt":self.expr(&n.elt),"generators":self.generators(&n.generators)}),
             ),
-            py::Expr::Await(n) => ("Await", json!({"value":self.expr(&n.value)})),
-            py::Expr::Yield(n) => ("Yield", json!({"value":self.opt(n.value.as_deref())})),
-            py::Expr::YieldFrom(n) => ("YieldFrom", json!({"value":self.expr(&n.value)})),
+            py::Expr::Await(n) => ("Await", node_fields!({"value":self.expr(&n.value)})),
+            py::Expr::Yield(n) => (
+                "Yield",
+                node_fields!({"value":self.opt(n.value.as_deref())}),
+            ),
+            py::Expr::YieldFrom(n) => ("YieldFrom", node_fields!({"value":self.expr(&n.value)})),
             py::Expr::Compare(n) => (
                 "Compare",
-                json!({"left":self.expr(&n.operands[0]),"ops":n.ops.iter().map(|op|self.tag(op)).collect::<Vec<_>>(),"comparators":self.exprs(&n.operands[1..])}),
+                node_fields!({"left":self.expr(&n.operands[0]),"ops":n.ops.iter().map(|op|self.tag(op)).collect::<Vec<_>>(),"comparators":self.exprs(&n.operands[1..])}),
             ),
             py::Expr::Call(n) => (
                 "Call",
-                json!({"func":self.expr(&n.func),"args":n.arguments.args.iter().map(|arg|{let mut node=self.expr(arg);if matches!(arg,py::Expr::Generator(g) if !g.parenthesized){self.set_range(&mut node,n.arguments.range);}node}).collect::<Vec<_>>(),"keywords":self.keywords(&n.arguments.keywords)}),
+                node_fields!({"func":self.expr(&n.func),"args":n.arguments.args.iter().map(|arg|{let mut node=self.expr(arg);if matches!(arg,py::Expr::Generator(g) if !g.parenthesized){self.set_range(&mut node,n.arguments.range);}node}).collect::<Vec<_>>(),"keywords":self.keywords(&n.arguments.keywords)}),
             ),
-            py::Expr::FString(n) => ("JoinedStr", json!({"values":self.fstring(&n.value)})),
+            py::Expr::FString(n) => ("JoinedStr", node_fields!({"values":self.fstring(&n.value)})),
             py::Expr::TString(n) => (
                 "TemplateStr",
-                json!({"values":n.value.elements().map(|e|self.interpolated(e)).collect::<Vec<_>>()}),
+                node_fields!({"values":n.value.elements().map(|e|self.interpolated(e)).collect::<Vec<_>>()}),
             ),
-            py::Expr::StringLiteral(n) => {
-                ("Constant", json!({"value":n.value.to_str(),"kind":null}))
-            }
-            py::Expr::BytesLiteral(_) => ("Constant", json!({"value":{"_bytes":true},"kind":null})),
+            py::Expr::StringLiteral(n) => (
+                "Constant",
+                node_fields!({"value":n.value.to_str(),"kind":Value::Null}),
+            ),
+            py::Expr::BytesLiteral(_) => (
+                "Constant",
+                node_fields!({"value":node_fields!({"_bytes":true}),"kind":Value::Null}),
+            ),
             py::Expr::NumberLiteral(n) => {
                 let value = match &n.value {
                     py::Number::Int(i) => i
                         .as_i64()
                         .map(|i| json!(i))
-                        .unwrap_or_else(|| json!({"_integer":i.to_string()})),
+                        .unwrap_or_else(|| node_fields!({"_integer":i.to_string()})),
                     py::Number::Float(f) => json!(f),
-                    py::Number::Complex { real, imag } => json!({"_complex":[real,imag]}),
+                    py::Number::Complex { real, imag } => {
+                        node_fields!({"_complex":vec![*real,*imag]})
+                    }
                 };
-                ("Constant", json!({"value":value,"kind":null}))
+                ("Constant", node_fields!({"value":value,"kind":Value::Null}))
             }
-            py::Expr::BooleanLiteral(n) => ("Constant", json!({"value":n.value,"kind":null})),
-            py::Expr::NoneLiteral(_) => ("Constant", json!({"value":null,"kind":null})),
-            py::Expr::EllipsisLiteral(_) => {
-                ("Constant", json!({"value":{"_ellipsis":true},"kind":null}))
-            }
+            py::Expr::BooleanLiteral(n) => (
+                "Constant",
+                node_fields!({"value":n.value,"kind":Value::Null}),
+            ),
+            py::Expr::NoneLiteral(_) => (
+                "Constant",
+                node_fields!({"value":Value::Null,"kind":Value::Null}),
+            ),
+            py::Expr::EllipsisLiteral(_) => (
+                "Constant",
+                node_fields!({"value":node_fields!({"_ellipsis":true}),"kind":Value::Null}),
+            ),
             py::Expr::Attribute(n) => (
                 "Attribute",
-                json!({"value":self.expr(&n.value),"attr":n.attr.as_str(),"ctx":self.tag(n.ctx)}),
+                node_fields!({"value":self.expr(&n.value),"attr":n.attr.as_str(),"ctx":self.tag(n.ctx)}),
             ),
             py::Expr::Subscript(n) => (
                 "Subscript",
-                json!({"value":self.expr(&n.value),"slice":self.expr(&n.slice),"ctx":self.tag(n.ctx)}),
+                node_fields!({"value":self.expr(&n.value),"slice":self.expr(&n.slice),"ctx":self.tag(n.ctx)}),
             ),
             py::Expr::Starred(n) => (
                 "Starred",
-                json!({"value":self.expr(&n.value),"ctx":self.tag(n.ctx)}),
+                node_fields!({"value":self.expr(&n.value),"ctx":self.tag(n.ctx)}),
             ),
-            py::Expr::Name(n) => ("Name", json!({"id":n.id.as_str(),"ctx":self.tag(n.ctx)})),
+            py::Expr::Name(n) => (
+                "Name",
+                node_fields!({"id":n.id.as_str(),"ctx":self.tag(n.ctx)}),
+            ),
             py::Expr::List(n) => (
                 "List",
-                json!({"elts":self.exprs(&n.elts),"ctx":self.tag(n.ctx)}),
+                node_fields!({"elts":self.exprs(&n.elts),"ctx":self.tag(n.ctx)}),
             ),
             py::Expr::Tuple(n) => (
                 "Tuple",
-                json!({"elts":self.exprs(&n.elts),"ctx":self.tag(n.ctx)}),
+                node_fields!({"elts":self.exprs(&n.elts),"ctx":self.tag(n.ctx)}),
             ),
             py::Expr::Slice(n) => (
                 "Slice",
-                json!({"lower":self.opt(n.lower.as_deref()),"upper":self.opt(n.upper.as_deref()),"step":self.opt(n.step.as_deref())}),
+                node_fields!({"lower":self.opt(n.lower.as_deref()),"upper":self.opt(n.upper.as_deref()),"step":self.opt(n.step.as_deref())}),
             ),
-            py::Expr::IpyEscapeCommand(_) => ("IpyEscapeCommand", json!({})),
+            py::Expr::IpyEscapeCommand(_) => ("IpyEscapeCommand", node_fields!({})),
         };
         self.node(name, e.range(), fields)
     }
     fn pattern(&self, p: &py::Pattern) -> Node {
         let (name, fields) = match p {
-            py::Pattern::MatchValue(n) => ("MatchValue", json!({"value":self.expr(&n.value)})),
+            py::Pattern::MatchValue(n) => {
+                ("MatchValue", node_fields!({"value":self.expr(&n.value)}))
+            }
             py::Pattern::MatchSingleton(n) => (
                 "MatchSingleton",
-                json!({"value":match n.value {py::Singleton::None=>Value::Null,py::Singleton::True=>json!(true),py::Singleton::False=>json!(false)}}),
+                node_fields!({"value":match n.value {py::Singleton::None=>Value::Null,py::Singleton::True=>json!(true),py::Singleton::False=>json!(false)}}),
             ),
             py::Pattern::MatchSequence(n) => (
                 "MatchSequence",
-                json!({"patterns":n.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>()}),
+                node_fields!({"patterns":n.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>()}),
             ),
             py::Pattern::MatchMapping(n) => (
                 "MatchMapping",
-                json!({"keys":self.exprs(&n.keys),"patterns":n.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>(),"rest":n.rest.as_ref().map(|s|s.as_str())}),
+                node_fields!({"keys":self.exprs(&n.keys),"patterns":n.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>(),"rest":n.rest.as_ref().map(|s|s.as_str())}),
             ),
             py::Pattern::MatchClass(n) => (
                 "MatchClass",
-                json!({"cls":self.expr(&n.cls),"patterns":n.arguments.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>(),"kwd_attrs":n.arguments.keywords.iter().map(|k|k.attr.as_str()).collect::<Vec<_>>(),"kwd_patterns":n.arguments.keywords.iter().map(|k|self.pattern(&k.pattern)).collect::<Vec<_>>()}),
+                node_fields!({"cls":self.expr(&n.cls),"patterns":n.arguments.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>(),"kwd_attrs":n.arguments.keywords.iter().map(|k|k.attr.as_str()).collect::<Vec<_>>(),"kwd_patterns":n.arguments.keywords.iter().map(|k|self.pattern(&k.pattern)).collect::<Vec<_>>()}),
             ),
             py::Pattern::MatchStar(n) => (
                 "MatchStar",
-                json!({"name":n.name.as_ref().map(|s|s.as_str())}),
+                node_fields!({"name":n.name.as_ref().map(|s|s.as_str())}),
             ),
             py::Pattern::MatchAs(n) => (
                 "MatchAs",
-                json!({"pattern":n.pattern.as_ref().map(|p|self.pattern(p)),"name":n.name.as_ref().map(|s|s.as_str())}),
+                node_fields!({"pattern":n.pattern.as_ref().map(|p|self.pattern(p)),"name":n.name.as_ref().map(|s|s.as_str())}),
             ),
             py::Pattern::MatchOr(n) => (
                 "MatchOr",
-                json!({"patterns":n.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>()}),
+                node_fields!({"patterns":n.patterns.iter().map(|p|self.pattern(p)).collect::<Vec<_>>()}),
             ),
         };
         self.node(name, p.range(), fields)

@@ -74,7 +74,9 @@ struct SourceImports {
     top: OnceLock<Vec<CachedImport>>,
     initialization: OnceLock<Vec<(String, Option<String>)>>,
 }
+type LoadKey = (String, Option<String>);
 pub struct Workspace {
+    loaded_cache: Mutex<HashMap<LoadKey, Vec<usize>>>,
     import_cache: HashMap<PathBuf, SourceImports>,
     module_index: HashMap<String, usize>,
     pub root: PathBuf,
@@ -670,6 +672,26 @@ impl Workspace {
                     .collect()
             })
     }
+    // Cache only complete traversals: recursive partial results depend on the
+    // current cycle guards and cannot safely be shared across imports.
+    pub(crate) fn loaded_sources<'a>(
+        &'a self,
+        module: &str,
+        name: Option<&str>,
+        compute: impl FnOnce() -> Vec<&'a Source>,
+    ) -> Vec<&'a Source> {
+        let key = (module.to_owned(), name.map(str::to_owned));
+        if let Some(indices) = self.loaded_cache.lock().unwrap().get(&key) {
+            return indices.iter().map(|i| &self.sources[*i]).collect();
+        }
+        let sources = compute();
+        let indices = sources
+            .iter()
+            .map(|s| self.module_index[s.module.as_ref().unwrap()])
+            .collect();
+        self.loaded_cache.lock().unwrap().insert(key, indices);
+        sources
+    }
     pub fn module_source(&self, module: &str) -> Option<&Source> {
         self.module_index.get(module).map(|i| &self.sources[*i])
     }
@@ -788,6 +810,7 @@ impl Workspace {
     }
 }
 pub fn load(root: &Path) -> Result<Workspace, String> {
+    let _span = crate::profile::span("workspace_load");
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let manifest = root.join("lint-it.toml");
     let raw: Value = if manifest.is_file() {
@@ -1073,6 +1096,7 @@ pub fn load(root: &Path) -> Result<Workspace, String> {
     }
     let mut ws = Workspace {
         module_index: HashMap::new(),
+        loaded_cache: Mutex::new(HashMap::new()),
         import_cache: HashMap::new(),
         root,
         manifest: manifest.is_file().then_some(manifest),
