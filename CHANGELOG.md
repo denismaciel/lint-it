@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0
+
+### Layouts
+
+- A conventional module can grow into a package of the same name. In
+  `domains`, `projections` and `shared`, `core/`, `model/`, `policy/`,
+  `event/`, `ports/`, `service/` and `boundary/` packages take the layer of
+  the matching `.py` module, as do `model/`, `core/`, `policy/`, `ports/` and
+  `cli/` in `flat`. Files inside such a package take its layer whatever their
+  own name; `persistence/` still wins below it. Previously these files were
+  unclassified (`LIT002`) in `domains`, and shell in `flat`.
+
 ## 0.14.0
 
 ### Rules
