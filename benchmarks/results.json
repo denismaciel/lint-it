@@ -1,0 +1,223 @@
+{
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.42",
+  "python": "3.14.9 (main, Oct 21 2026, 17:48:02) [Clang 23.1.3 ]",
+  "cpu_count": 16,
+  "runs": 5,
+  "binary_sha256": "ed698e0d008f8c3081c12b006687f9b340971c2f9873310ed768751e0e878423",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (built from a source tarball)",
+  "reference_commit": "d2ee8ba98c49ecb08767e54ffca794d6494fac69",
+  "cpu": "AMD Ryzen 7 255 w/ Radeon 780M Graphics",
+  "method": "warm filesystem; fresh process; alternating order; no analysis cache; complete JSON equality",
+  "results": [
+    {
+      "name": "requests",
+      "repository": "psf/requests",
+      "revision": "b25c87d7cb8d6a18a37fa12442b5f883f9e41741",
+      "tag": "v2.32.5",
+      "jobs": 1,
+      "files": 36,
+      "source_bytes": 377442,
+      "source_sha256": "7fc3e1817b5f2e39bf5fb0f3d22cfdc542fbec48ddeecb9e6bfa3495061b699d",
+      "policy_sha256": "fd4d588d1a345f593c0f461f763cc57bb5a5fbf6d61dd4a068f6cf19c0d51aff",
+      "findings": 637,
+      "equivalent": true,
+      "output_sha256": "671c0e72e70edf714dd0226148435cd5cf9c29c7207ecfc7df4e2ca5c430ae6c",
+      "seconds": {
+        "python": [
+          1.0632345529993472,
+          0.9358835490002093,
+          0.9329183000008925,
+          1.002141434000805,
+          1.0583373709996522
+        ],
+        "rust": [
+          0.4561114150001231,
+          0.4236196080000809,
+          0.42227751999962493,
+          0.44249262799894495,
+          0.45525008699951286
+        ]
+      },
+      "median_seconds": {
+        "python": 1.002141434000805,
+        "rust": 0.44249262799894495
+      },
+      "speedup": 2.2647641352415806
+    },
+    {
+      "name": "requests",
+      "repository": "psf/requests",
+      "revision": "b25c87d7cb8d6a18a37fa12442b5f883f9e41741",
+      "tag": "v2.32.5",
+      "jobs": 4,
+      "files": 36,
+      "source_bytes": 377442,
+      "source_sha256": "7fc3e1817b5f2e39bf5fb0f3d22cfdc542fbec48ddeecb9e6bfa3495061b699d",
+      "policy_sha256": "fd4d588d1a345f593c0f461f763cc57bb5a5fbf6d61dd4a068f6cf19c0d51aff",
+      "findings": 637,
+      "equivalent": true,
+      "output_sha256": "671c0e72e70edf714dd0226148435cd5cf9c29c7207ecfc7df4e2ca5c430ae6c",
+      "seconds": {
+        "python": [
+          1.1005750299991632,
+          1.0743766350005899,
+          0.9436135530013416,
+          1.1883668200007378,
+          1.0378725059999852
+        ],
+        "rust": [
+          0.1861504389999027,
+          0.16873979000047257,
+          0.17884418899848242,
+          0.17413579700041737,
+          0.19786202800059982
+        ]
+      },
+      "median_seconds": {
+        "python": 1.0743766350005899,
+        "rust": 0.17884418899848242
+      },
+      "speedup": 6.0073332044895595
+    },
+    {
+      "name": "flask",
+      "repository": "pallets/flask",
+      "revision": "80be49be88b534d2a72ef6bf5ea4aabf89f3305b",
+      "tag": "3.1.2",
+      "jobs": 1,
+      "files": 83,
+      "source_bytes": 572670,
+      "source_sha256": "a5873bacf0e8725e41a1951d6750e62b94aaafb1b1e9d5d8ab24adcaa37b9fa6",
+      "policy_sha256": "fd4d588d1a345f593c0f461f763cc57bb5a5fbf6d61dd4a068f6cf19c0d51aff",
+      "findings": 279,
+      "equivalent": true,
+      "output_sha256": "9490e263c050c3bae50401bea0b8b8fdef977b6b70a30ceb332285881f313427",
+      "seconds": {
+        "python": [
+          1.107157243999609,
+          1.6896902569988015,
+          1.220720588000404,
+          1.324477976999333,
+          1.1737306529994385
+        ],
+        "rust": [
+          0.49346479599989834,
+          0.8364186769995285,
+          0.507822853000107,
+          0.49241690099916013,
+          0.5314060269993206
+        ]
+      },
+      "median_seconds": {
+        "python": 1.220720588000404,
+        "rust": 0.507822853000107
+      },
+      "speedup": 2.403831534537393
+    },
+    {
+      "name": "flask",
+      "repository": "pallets/flask",
+      "revision": "80be49be88b534d2a72ef6bf5ea4aabf89f3305b",
+      "tag": "3.1.2",
+      "jobs": 4,
+      "files": 83,
+      "source_bytes": 572670,
+      "source_sha256": "a5873bacf0e8725e41a1951d6750e62b94aaafb1b1e9d5d8ab24adcaa37b9fa6",
+      "policy_sha256": "fd4d588d1a345f593c0f461f763cc57bb5a5fbf6d61dd4a068f6cf19c0d51aff",
+      "findings": 279,
+      "equivalent": true,
+      "output_sha256": "9490e263c050c3bae50401bea0b8b8fdef977b6b70a30ceb332285881f313427",
+      "seconds": {
+        "python": [
+          1.0943695269997988,
+          1.061054313000568,
+          1.1683483110009547,
+          1.192970392999996,
+          1.1777452869991976
+        ],
+        "rust": [
+          0.17132259900063218,
+          0.16616737799995462,
+          0.17067342500013183,
+          0.1707626009992964,
+          0.17176218399981735
+        ]
+      },
+      "median_seconds": {
+        "python": 1.1683483110009547,
+        "rust": 0.1707626009992964
+      },
+      "speedup": 6.841944923325269
+    },
+    {
+      "name": "django",
+      "repository": "django/django",
+      "revision": "517705797386d21e9b7b469639329a77280ea5ab",
+      "tag": "5.2.7",
+      "jobs": 1,
+      "files": 2818,
+      "source_bytes": 17996815,
+      "source_sha256": "b1b746c36f8fcb0001419dc3ebfdba76050882bfbef184fc9d2190ec18b451b8",
+      "policy_sha256": "fd4d588d1a345f593c0f461f763cc57bb5a5fbf6d61dd4a068f6cf19c0d51aff",
+      "findings": 10860,
+      "equivalent": true,
+      "output_sha256": "25636f91beda485055c7648e7c61b6ccf0e07facc9e97fb40e6cd7770b09f6a3",
+      "seconds": {
+        "python": [
+          28.69404754399875,
+          27.209501154000463,
+          25.624721375999798,
+          28.271521157999814,
+          42.2250811490012
+        ],
+        "rust": [
+          16.916397802000574,
+          15.74955644900001,
+          15.389016343999174,
+          15.367028023001694,
+          43.718239131998416
+        ]
+      },
+      "median_seconds": {
+        "python": 28.271521157999814,
+        "rust": 15.74955644900001
+      },
+      "speedup": 1.7950677690224643
+    },
+    {
+      "name": "django",
+      "repository": "django/django",
+      "revision": "517705797386d21e9b7b469639329a77280ea5ab",
+      "tag": "5.2.7",
+      "jobs": 4,
+      "files": 2818,
+      "source_bytes": 17996815,
+      "source_sha256": "b1b746c36f8fcb0001419dc3ebfdba76050882bfbef184fc9d2190ec18b451b8",
+      "policy_sha256": "fd4d588d1a345f593c0f461f763cc57bb5a5fbf6d61dd4a068f6cf19c0d51aff",
+      "findings": 10860,
+      "equivalent": true,
+      "output_sha256": "25636f91beda485055c7648e7c61b6ccf0e07facc9e97fb40e6cd7770b09f6a3",
+      "seconds": {
+        "python": [
+          22.204007432999788,
+          13.165422771999147,
+          8.885913791998973,
+          9.529950906999147,
+          9.752537114000006
+        ],
+        "rust": [
+          8.518480300001102,
+          8.088219543999003,
+          6.711281675999999,
+          7.275829287998931,
+          6.455674049000663
+        ]
+      },
+      "median_seconds": {
+        "python": 9.752537114000006,
+        "rust": 7.275829287998931
+      },
+      "speedup": 1.3404021353395776
+    }
+  ]
+}

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.19.0
+
+- The existing Python package now runs the Rust implementation, using Ruff's parser.
+  Package name, Git-tag installation, pre-commit hook, CLI commands and output
+  formats remain unchanged. No Rust toolchain is needed on supported clients.
+- Ship verified native binaries and platform wheels for Linux x86-64/ARM64,
+  macOS Intel/Apple Silicon and Windows x86-64. Git/sdist builds download the
+  matching release binary and verify its pinned SHA-256; runtime is offline.
+- Preserve the Python implementation as the equivalence reference. The port
+  passes the existing regression suite and full Requests/Flask diagnostic checks.
+- Native parsing, worker threads, moved AST subtrees and cached import traversals
+  improve measured single-worker runtime by roughly 3.2–3.3× versus Python.
+
+
 ## 0.18.0
 
 ### Layouts

@@ -1,13 +1,13 @@
 [project]
 name = "lint-it"
-version = "0.18.0"
+version = "0.19.0"
 description = "Strict architecture linting for Python functional cores and imperative shells"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 authors = [{ name = "Denis Maciel" }]
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 keywords = ["lint", "architecture", "static-analysis", "functional-core"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -25,20 +25,27 @@ Issues = "https://github.com/denismaciel/lint-it/issues"
 Changelog = "https://github.com/denismaciel/lint-it/blob/main/CHANGELOG.md"
 
 [project.scripts]
-lint-it = "lint_it.cli:main"
+lint-it = "lint_it._native:main"
 
 [build-system]
-requires = ["uv_build>=0.10,<0.13"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
-source-include = ["tests/**", "docs/**", "lint-it.toml", "CHANGELOG.md", "uv.lock"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/lint_it"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "rust/src/", "rust/Cargo.toml", "rust/Cargo.lock", "rust/README.md", "rust/LICENSE*", "tests/", "docs/", "benchmarks/", "hatch_build.py", "native-artifacts.json", "THIRD_PARTY_NOTICES.txt", "scripts/", "pyproject.toml", "README.md", "LICENSE", "CHANGELOG.md", "lint-it.toml", "uv.lock", ".pre-commit-hooks.yaml"]
+exclude = ["src/lint_it/_bin/", "benchmarks/target/"]
 
 [dependency-groups]
-dev = ["pytest>=9,<10", "ruff>=0.16,<1", "ty>=0.0.70"]
+dev = ["hatchling>=1.27,<2", "pytest>=9,<10", "ruff>=0.16,<1", "ty>=0.0.70"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100

@@ -36,10 +36,12 @@ laundered through a re-export.
 
 ## Install
 
-lint-it is distributed from GitHub, not PyPI. Pin a release tag:
+lint-it is distributed as a Python package from GitHub, not PyPI. The CLI runs
+a bundled Rust executable; clients do not need Cargo or a Rust toolchain.
+Pin a release tag (currently `v0.19.0`):
 
 ```bash
-uv add --dev 'lint-it @ git+https://github.com/denismaciel/lint-it.git@<tag>'
+uv add --dev 'lint-it @ git+https://github.com/denismaciel/lint-it.git@v0.19.0'
 ```
 
 Or run it with pre-commit:
@@ -47,10 +49,16 @@ Or run it with pre-commit:
 ```yaml
 repos:
   - repo: https://github.com/denismaciel/lint-it
-    rev: <tag>
+    rev: v0.19.0
     hooks:
       - id: lint-it
 ```
+
+Git and source-distribution installs download the matching executable from that
+release and verify its pinned SHA-256. Installed packages run offline. Prebuilt
+wheels are also attached to the release. Supported platforms: Linux x86-64 and
+ARM64 (including musl), macOS Intel (10.13+) and Apple Silicon (11+), and Windows
+x86-64. Python 3.12+ remains required.
 
 ## Use
 
@@ -71,8 +79,7 @@ lint-it rules                   # list every rule
 imports are followed across files and packages. Output formats are `text`,
 `json` (`{"findings": [...], "summary": {...}}`) and `github` (workflow
 annotations). Exit status is 0 when clean, 1 when there are findings, and 2 for
-usage errors or a manifest that cannot be loaded. Large workspaces are checked
-in parallel worker processes; `--jobs 1` checks in-process.
+usage errors or a manifest that cannot be loaded. Files are analyzed with native worker threads; `--jobs 1` uses one worker.
 
 ### Adopting lint-it on an existing codebase
 
@@ -117,10 +124,25 @@ layer's rules with their own dependency policy.
 See [docs/rules.md](docs/rules.md) for every rule and
 [docs/configuration.md](docs/configuration.md) for the manifest.
 
+## Rust implementation
+
+The installed CLI uses Rust. The original Python implementation remains in the
+package for compatibility and differential testing. To build Rust locally:
+
+```bash
+cargo build --locked --release --manifest-path rust/Cargo.toml
+rust/target/release/lint-it-rust check
+```
+
+It reuses Ruff's parser, parallelizes analysis, and preserves lint-it's rules and
+CLI commands. See [build and verification instructions](rust/README.md) and the
+[Python/Rust performance comparison](benchmarks/README.md).
+
 ## Development
 
 ```bash
-uv sync
+cargo build --locked --release --manifest-path rust/Cargo.toml
+LINT_IT_NATIVE_BINARY="$PWD/rust/target/release/lint-it-rust" uv sync
 uv run pytest
 uv run ruff format --check . && uv run ruff check .
 uv run ty check

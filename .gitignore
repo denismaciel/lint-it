@@ -8,3 +8,9 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Rust build output
+/rust/target/
+/benchmarks/target/
+
+/src/lint_it/_bin/

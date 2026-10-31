@@ -12,6 +12,9 @@ permissions:
 
 jobs:
   test:
+    needs: rust
+    env:
+      LINT_IT_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/lint-it-rust
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -23,11 +26,19 @@ jobs:
         with:
           version: "0.12.4"
           python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ci-native
+          path: rust/target/release
+      - run: chmod +x rust/target/release/lint-it-rust
       - run: uv sync --locked
       - run: uv run pytest
       - run: uv run lint-it check
 
   check:
+    needs: rust
+    env:
+      LINT_IT_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/lint-it-rust
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,6 +46,11 @@ jobs:
         with:
           version: "0.12.4"
           python-version: "3.14"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ci-native
+          path: rust/target/release
+      - run: chmod +x rust/target/release/lint-it-rust
       - run: uv sync --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
@@ -44,3 +60,27 @@ jobs:
         run: |
           uv run --isolated --no-project --with dist/lint_it-*.whl lint-it check --format github
           uv run --isolated --no-project --with dist/lint_it-*.whl lint-it rules
+
+  rust:
+    env:
+      LINT_IT_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/lint-it-rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.4"
+          python-version: "3.14"
+      - run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+      - run: cargo +1.99.0 fmt --manifest-path rust/Cargo.toml --check
+      - run: cargo +1.99.0 clippy --locked --release --manifest-path rust/Cargo.toml --all-targets -- -D warnings
+      - run: cargo +1.99.0 test --locked --release --manifest-path rust/Cargo.toml
+      - run: cargo +1.99.0 build --locked --release --manifest-path rust/Cargo.toml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ci-native
+          path: rust/target/release/lint-it-rust
+      - run: uv sync --locked
+      - run: uv run python -m pytest -p benchmarks.differential_plugin
+      - name: Compare pinned Python projects
+        run: uv run python benchmarks/compare.py --project requests --project flask --runs 1 --jobs 1

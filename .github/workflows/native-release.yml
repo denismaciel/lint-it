@@ -1,0 +1,88 @@
+name: Native release artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            macos_target: "10.13"
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            macos_target: "11.0"
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target }}
+      CFLAGS: "-O2 -std=gnu11"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: "0.12.4"
+          python-version: "3.12"
+      - name: Install Rust
+        shell: bash
+        run: rustup toolchain install 1.99.0 --profile minimal --target ${{ matrix.target }}
+      - name: Install musl compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build native executable
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then export CC=musl-gcc; fi
+          # Ubuntu's musl wrapper cannot link GCC's glibc-based ARM atomic helpers.
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            export CFLAGS="$CFLAGS -mno-outline-atomics"
+          fi
+          # Keep Windows installations independent of a separately installed VC runtime.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export RUSTFLAGS="-C target-feature=+crt-static"
+          fi
+          cargo +1.99.0 build --locked --release --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
+      - name: Smoke test and stage executable
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
+          binary="rust/target/$TARGET/release/lint-it-rust$suffix"
+          "$binary" rules
+          mkdir -p native-artifacts
+          cp "$binary" "native-artifacts/lint-it-rust-$TARGET$suffix"
+      - name: Build and test Python wheel
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
+          export LINT_IT_NATIVE_BINARY="$PWD/rust/target/$TARGET/release/lint-it-rust$suffix"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export LINT_IT_NATIVE_BINARY="$(cygpath -m "$LINT_IT_NATIVE_BINARY")"
+          fi
+          export LINT_IT_RUST_BINARY="$LINT_IT_NATIVE_BINARY"
+          uv sync --locked
+          uv run pytest tests/test_native.py tests/test_launcher.py tests/test_packaging.py
+          uv build --wheel --out-dir native-artifacts
+          uv run --isolated --no-project --with native-artifacts/*.whl lint-it rules
+          uv run --isolated --no-project --with native-artifacts/*.whl python -m lint_it rules
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-${{ matrix.target }}
+          path: native-artifacts/*
+          if-no-files-found: error

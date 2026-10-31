@@ -1,3 +1,3 @@
-from lint_it.cli import main
+from lint_it._native import main
 
 raise SystemExit(main())
