@@ -51,6 +51,10 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
             export CFLAGS="$CFLAGS -mno-outline-atomics"
           fi
+          # Keep Windows installations independent of a separately installed VC runtime.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export RUSTFLAGS="-C target-feature=+crt-static"
+          fi
           cargo +1.99.0 build --locked --release --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
       - name: Smoke test and stage executable
         shell: bash
