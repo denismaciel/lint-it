@@ -2,9 +2,6 @@ name: Native release artifacts
 
 on:
   workflow_dispatch:
-  push:
-    branches: [feat/rust-reimplementation]
-    paths: [rust/**, .github/workflows/native-release.yml]
 
 permissions:
   contents: read

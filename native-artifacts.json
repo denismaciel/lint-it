@@ -1,4 +1,15 @@
 {
   "version": "0.19.0",
-  "sha256": {}
+  "rust_tree": "0e4749d4003c29d3581fdb29750c8ad13d72c8a8",
+  "workflow_runs": [
+    41147525003,
+    41147882008
+  ],
+  "sha256": {
+    "lint-it-rust-aarch64-apple-darwin": "4c6fc072fc30ba996c3ef93c6c385c4ac076c674ae33b212789c6c46c7f46b24",
+    "lint-it-rust-aarch64-unknown-linux-musl": "fe2ec078588341c28e56b0691242f6947b7ac04425fee65bac4b6efc25e0aff0",
+    "lint-it-rust-x86_64-apple-darwin": "a8aa6d6336279df458c3898c37aba51e405493d256685e458f5e8b29d027935d",
+    "lint-it-rust-x86_64-pc-windows-msvc.exe": "657df40c1750d47b2578ce084c124cfa0dae6d5dca939619748477209b42d1dc",
+    "lint-it-rust-x86_64-unknown-linux-musl": "348637ef7c950c1c5f383572d582a1c86b4a1a35b51857cbf2bfee7cae96c6ab"
+  }
 }
