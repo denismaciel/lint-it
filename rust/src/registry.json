@@ -77,7 +77,7 @@
   {
     "code": "LIT302",
     "name": "transaction-boundary",
-    "documentation": "Code outside a transaction boundary calls `commit()` or `rollback()`.\n\nOne place per request or job decides when work is durable. Any method named\n`commit` or `rollback` counts, on any receiver; only transaction and test\nmodules may call them."
+    "documentation": "Code outside a transaction boundary calls `commit()` or `rollback()`.\n\nOne place per request or job decides when work is durable. Any method named\n`commit` or `rollback` counts, unless its receiver resolves only to a\nthird-party package outside the database drivers and ORMs (`sqlalchemy`,\n`asyncpg`, `psycopg`, `sqlite3`, ...), such as a search index writer. Only\ntransaction and test modules may call them."
   },
   {
     "code": "LIT303",

@@ -56,6 +56,27 @@ IO_PACKAGES = frozenset(
 FRAMEWORK_PACKAGES = frozenset(
     {"fastapi", "starlette", "sqlalchemy", "pydantic", "pydantic_settings"}
 )
+# Top-level packages whose `commit()`/`rollback()` end a database transaction.
+TRANSACTION_PACKAGES = frozenset(
+    {
+        "aiomysql",
+        "aiosqlite",
+        "asyncpg",
+        "django",
+        "duckdb",
+        "MySQLdb",
+        "peewee",
+        "psycopg",
+        "psycopg2",
+        "psycopg_pool",
+        "pymongo",
+        "pymysql",
+        "sqlalchemy",
+        "sqlite3",
+        "sqlmodel",
+        "tortoise",
+    }
+)
 
 # Top-level packages each layer may not import, directly or through re-exports.
 FORBIDDEN_IMPORTS: Mapping[str, frozenset[str]] = MappingProxyType(

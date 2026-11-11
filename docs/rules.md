@@ -201,8 +201,10 @@ once at startup and pass typed values inward.
 `transaction-boundary`: Code outside a transaction boundary calls `commit()` or `rollback()`.
 
 One place per request or job decides when work is durable. Any method named
-`commit` or `rollback` counts, on any receiver; only transaction and test
-modules may call them.
+`commit` or `rollback` counts, unless its receiver resolves only to a
+third-party package outside the database drivers and ORMs (`sqlalchemy`,
+`asyncpg`, `psycopg`, `sqlite3`, ...), such as a search index writer. Only
+transaction and test modules may call them.
 
 ### LIT303
 

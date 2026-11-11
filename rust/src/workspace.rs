@@ -695,6 +695,11 @@ impl Workspace {
     pub fn module_source(&self, module: &str) -> Option<&Source> {
         self.module_index.get(module).map(|i| &self.sources[*i])
     }
+    pub fn defines_package(&self, root: &str) -> bool {
+        self.module_index
+            .keys()
+            .any(|m| m == root || m.strip_prefix(root).is_some_and(|r| r.starts_with('.')))
+    }
     pub fn dependency_overridden(&self, importer: &Source, imported: &Source) -> bool {
         self.owner(&importer.path).is_some_and(|i| {
             let p = &self.packages[i];

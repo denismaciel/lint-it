@@ -1,4 +1,13 @@
 use super::*;
+fn non_transactional(file: &Source, w: &Workspace, receiver: &Node) -> bool {
+    let ns = names(file, receiver);
+    !ns.is_empty()
+        && !ns.contains("?")
+        && ns.iter().all(|n| {
+            let root = n.split('.').next().unwrap_or(n);
+            !effects::TRANSACTION_PACKAGES.contains(&root) && !w.defines_package(root)
+        })
+}
 pub(super) fn check(file: &Source, w: &Workspace, out: &mut Vec<Finding>) {
     let inner = file.has_layer(&["core", "port"]);
     let core = file.has_layer(&["core"]);
@@ -31,6 +40,7 @@ pub(super) fn check(file: &Source, w: &Workspace, out: &mut Vec<Finding>) {
             && k == "Call"
             && kind(f) == "Attribute"
             && ["commit", "rollback"].contains(&s(f, "attr"))
+            && !non_transactional(file, w, child(f, "value"))
         {
             add(
                 out,
