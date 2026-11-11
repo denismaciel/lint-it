@@ -51,6 +51,35 @@ def test_lit302_rejects_transaction_control(project: Project, path: str, method:
 
 
 @pytest.mark.parametrize(
+    "source",
+    [
+        "from sqlalchemy.orm import Session\ndef save(session: Session):\n    session.commit()\n",
+        "import sqlite3\nconnection = sqlite3.connect(':memory:')\nconnection.commit()\n",
+        "from example.adapters.orders import OrderRepository\n"
+        "def save(orders: OrderRepository):\n    orders.commit()\n",
+        "import tantivy\ndef build(writer):\n    writer.commit()\n",
+    ],
+)
+def test_lit302_rejects_database_first_party_and_unknown_receivers(
+    project: Project, source: str
+) -> None:
+    project.write({"src/example/adapters/orders.py": "class OrderRepository: ...\n"})
+    assert "LIT302" in project.lint(SERVICE, source)
+
+
+def test_lit302_allows_third_party_receivers_outside_databases(project: Project) -> None:
+    source = (
+        "import tantivy\n"
+        "def build(schema):\n"
+        "    index = tantivy.Index(schema)\n"
+        "    writer = index.writer()\n"
+        "    writer.commit()\n"
+        "    writer.rollback()\n"
+    )
+    assert project.lint(SERVICE, source) == []
+
+
+@pytest.mark.parametrize(
     "path",
     [
         "src/example/app/dependencies.py",

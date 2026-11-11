@@ -144,6 +144,24 @@ pub const IO_PACKAGES: &[&str] = &[
     "sqlite3",
     "subprocess",
 ];
+pub const TRANSACTION_PACKAGES: &[&str] = &[
+    "aiomysql",
+    "aiosqlite",
+    "asyncpg",
+    "django",
+    "duckdb",
+    "MySQLdb",
+    "peewee",
+    "psycopg",
+    "psycopg2",
+    "psycopg_pool",
+    "pymongo",
+    "pymysql",
+    "sqlalchemy",
+    "sqlite3",
+    "sqlmodel",
+    "tortoise",
+];
 pub fn nondeterministic(name: &str) -> bool {
     let (module, member) = name.rsplit_once('.').unwrap_or(("", name));
     NONDETERMINISTIC.contains(&name)

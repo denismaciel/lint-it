@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Rules
+
+- **LIT302 ignores third-party receivers outside databases.** A `commit()` or
+  `rollback()` whose receiver resolves only to third-party packages other than
+  database drivers and ORMs (`sqlalchemy`, `asyncpg`, `psycopg`, `sqlite3`,
+  `django`, ...) is no longer reported, so building a search index with
+  `tantivy.Index(...).writer().commit()` stays legal in a service. Unresolved,
+  first-party and database receivers are still reported.
+
+### Upgrading
+
+- `lint-it baseline --prune` drops LIT302 entries for such receivers.
+
 ## 0.19.0
 
 - The existing Python package now runs the Rust implementation, using Ruff's parser.
