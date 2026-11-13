@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.20.1
+
+### Fixes
+
+- **Virtual environments are skipped whatever their name.** File discovery now
+  prunes any directory containing `pyvenv.cfg`, not only one named `.venv`. A
+  checkout with `.venv315/` or `env/` beside `pyproject.toml` no longer parses
+  every installed package, which could exhaust memory and get the process killed.
+
+### Performance
+
+- **About half the memory, about 40% faster.** Syntax trees omit null and empty
+  fields and end positions, `ctx` and operator markers keep only their kind,
+  each node map is allocated at its final size, and unresolved expressions no
+  longer store a symbol set. Peak memory falls from 3.9 GB to 1.8 GB on Django
+  and from 4.6 GB to 2.2 GB on a 2,600-file service; findings are unchanged.
+
 ## 0.20.0
 
 ### Rules
