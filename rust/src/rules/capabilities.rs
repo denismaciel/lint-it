@@ -27,6 +27,13 @@ const EFFECTFUL: &[&str] = &[
     "typing.IO",
     "typing.TextIO",
 ];
+// Field values and list elements, the positions a nested node can occupy.
+fn nested(n: &mut Node) -> impl Iterator<Item = &mut Node> {
+    n.values_mut().flat_map(|v| match v {
+        Node::List(values) => values.iter_mut().collect::<Vec<_>>(),
+        v => vec![v],
+    })
+}
 fn normalize(n: &mut Node) {
     if kind(n) == "Constant"
         && let Some(text) = n["value"].as_str()
@@ -34,28 +41,13 @@ fn normalize(n: &mut Node) {
         && kind(&parsed) != "Constant"
     {
         normalize(&mut parsed);
-        for key in ["lineno", "col_offset"] {
-            if let Some(v) = n.get(key) {
-                parsed[key] = v.clone();
-            }
+        if let Some((line, column)) = n.position() {
+            parsed.set_position(line, column);
         }
         *n = parsed;
         return;
     }
-    if let Some(obj) = n.as_object_mut() {
-        for (k, v) in obj {
-            if k.starts_with('_') {
-                continue;
-            }
-            if v.is_object() {
-                normalize(v)
-            } else if let Some(a) = v.as_array_mut() {
-                for v in a {
-                    normalize(v)
-                }
-            }
-        }
-    }
+    nested(n).for_each(normalize)
 }
 fn rewrite(n: &mut Node) {
     if kind(n) == "arg"
@@ -63,39 +55,15 @@ fn rewrite(n: &mut Node) {
     {
         normalize(a)
     }
-    if let Some(obj) = n.as_object_mut() {
-        for (k, v) in obj {
-            if k.starts_with('_') {
-                continue;
-            }
-            if v.is_object() {
-                rewrite(v)
-            } else if let Some(a) = v.as_array_mut() {
-                for v in a {
-                    rewrite(v)
-                }
-            }
-        }
-    }
+    nested(n).for_each(rewrite)
 }
 fn reid(n: &mut Node, c: &mut usize) {
-    if n.get("_type").is_some() {
-        n["_id"] = serde_json::json!(*c);
+    if n.is_node() {
+        n.set_id(*c);
         *c += 1;
     }
-    if let Some(obj) = n.as_object_mut() {
-        for (k, v) in obj {
-            if k.starts_with('_') {
-                continue;
-            }
-            if v.is_object() {
-                reid(v, c)
-            } else if let Some(a) = v.as_array_mut() {
-                for v in a {
-                    reid(v, c)
-                }
-            }
-        }
+    for v in nested(n) {
+        reid(v, c)
     }
 }
 fn annotation_nodes<'a>(n: &'a Node, symbols: &symbols::Symbols) -> Vec<&'a Node> {

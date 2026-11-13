@@ -657,17 +657,7 @@ impl Workspace {
                         "FunctionDef" | "AsyncFunctionDef" | "Lambda" => continue,
                         "Import" | "ImportFrom" => imports.push(node),
                         _ => {
-                            if let Some(object) = node.as_object() {
-                                for value in object.values() {
-                                    if value.get("_type").is_some() {
-                                        pending.push(value);
-                                    } else if let Some(array) = value.as_array() {
-                                        pending.extend(
-                                            array.iter().filter(|v| v.get("_type").is_some()),
-                                        );
-                                    }
-                                }
-                            }
+                            pending.extend(ast::children(node));
                         }
                     }
                 }

@@ -29,20 +29,7 @@ fn parameters(node: &Node) -> Vec<&Node> {
         .collect()
 }
 fn children(node: &Node) -> Vec<&Node> {
-    let mut out = Vec::new();
-    if let Some(map) = node.as_object() {
-        for (k, v) in map {
-            if k.starts_with('_') {
-                continue;
-            }
-            if v.get("_type").is_some() {
-                out.push(v)
-            } else if let Some(a) = v.as_array() {
-                out.extend(a.iter().filter(|x| x.get("_type").is_some()));
-            }
-        }
-    }
-    out
+    ast::children(node)
 }
 pub fn check(file: &Source, workspace: &Workspace) -> Vec<Finding> {
     let _span = crate::profile::span("local_rules");

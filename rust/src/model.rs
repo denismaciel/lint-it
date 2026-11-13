@@ -63,8 +63,8 @@ pub fn finding(
 ) -> Finding {
     Finding {
         filename: file.filename.clone(),
-        line: node["lineno"].as_u64().unwrap_or(1) as usize,
-        column: node["col_offset"].as_u64().unwrap_or(0) as usize,
+        line: node.position().map_or(1, |(line, _)| line),
+        column: node.position().map_or(0, |(_, column)| column),
         code: code.into(),
         message: message.into(),
         target,

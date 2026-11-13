@@ -1,9 +1,66 @@
 //! Conservative, flow-sensitive bindings matching the Python implementation.
 use crate::ast::{self, Node, child, children, id, items, kind, s, walk};
-use std::collections::{BTreeSet, HashMap};
-/// Resolved names per expression id. `None` records an unresolved expression
-/// without allocating; most expressions in real code are unresolved.
-pub type Symbols = HashMap<usize, Option<BTreeSet<String>>>;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{Arc, Mutex, OnceLock};
+/// Resolved names per expression id, sorted by id. Every file's table stays in
+/// memory, so unresolved expressions are absent and names are shared: a
+/// workspace repeats a few thousand qualified names hundreds of thousands of times.
+#[derive(Debug, Clone, Default)]
+pub struct Symbols(Box<[(u32, Names)]>);
+#[derive(Debug, Clone)]
+enum Names {
+    One(Arc<str>),
+    Many(Box<[Arc<str>]>),
+}
+impl Symbols {
+    fn compact(references: References) -> Self {
+        static SHARED: OnceLock<Mutex<HashSet<Arc<str>>>> = OnceLock::new();
+        let shared = SHARED.get_or_init(Default::default);
+        let mut local: HashMap<String, Arc<str>> = HashMap::new();
+        let mut intern = |name: String| match local.get(&name) {
+            Some(known) => known.clone(),
+            None => {
+                let mut shared = shared.lock().unwrap();
+                let known = match shared.get(name.as_str()) {
+                    Some(known) => known.clone(),
+                    None => {
+                        let known: Arc<str> = name.as_str().into();
+                        shared.insert(known.clone());
+                        known
+                    }
+                };
+                local.insert(name, known.clone());
+                known
+            }
+        };
+        let mut entries: Vec<_> = references
+            .into_iter()
+            .filter_map(|(id, names)| {
+                let mut names: Vec<_> = names?.into_iter().map(&mut intern).collect();
+                let names = if names.len() == 1 {
+                    Names::One(names.pop().unwrap())
+                } else {
+                    Names::Many(names.into())
+                };
+                Some((id as u32, names))
+            })
+            .collect();
+        entries.sort_unstable_by_key(|(id, _)| *id);
+        Self(entries.into())
+    }
+    fn get(&self, id: usize) -> Option<BTreeSet<String>> {
+        let index = self
+            .0
+            .binary_search_by_key(&(id as u32), |(id, _)| *id)
+            .ok()?;
+        Some(match &self.0[index].1 {
+            Names::One(name) => singleton(&**name),
+            Names::Many(names) => names.iter().map(|name| name.to_string()).collect(),
+        })
+    }
+}
+/// `None` records an unresolved expression without allocating a set.
+type References = HashMap<usize, Option<BTreeSet<String>>>;
 type Bindings = HashMap<String, BTreeSet<String>>;
 fn unknown() -> BTreeSet<String> {
     BTreeSet::from(["?".into()])
@@ -12,10 +69,7 @@ fn singleton(s: impl Into<String>) -> BTreeSet<String> {
     BTreeSet::from([s.into()])
 }
 pub fn names(symbols: &Symbols, node: &Node) -> BTreeSet<String> {
-    symbols
-        .get(&id(node))
-        .and_then(Clone::clone)
-        .unwrap_or_else(unknown)
+    symbols.get(id(node)).unwrap_or_else(unknown)
 }
 pub fn absolute_module(node: &Node, package: Option<&str>) -> Option<String> {
     let level = child(node, "level").as_u64().unwrap_or(0) as usize;
@@ -119,7 +173,7 @@ fn is_expr(node: &Node) -> bool {
 }
 struct Resolver<'a> {
     bindings: Bindings,
-    references: Symbols,
+    references: References,
     function_parent: Option<Bindings>,
     package: Option<&'a str>,
 }
@@ -515,7 +569,7 @@ pub fn resolve(tree: &Node, package: Option<&str>) -> Symbols {
         .collect();
     let mut resolver = Resolver::new(bindings, package);
     resolver.visit(tree);
-    resolver.references
+    Symbols::compact(resolver.references)
 }
 
 #[cfg(test)]
@@ -528,7 +582,7 @@ mod tests {
             .into_iter()
             .filter(|n| kind(n) == "Call")
             .collect();
-        calls.sort_by_key(|n| (n["lineno"].as_u64(), n["col_offset"].as_u64()));
+        calls.sort_by_key(|n| n.position());
         calls
             .into_iter()
             .map(|n| names(&symbols, child(n, "func")))
