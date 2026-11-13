@@ -148,25 +148,37 @@ impl<'a> Adapter<'a> {
         let index = self.lines.partition_point(|p| *p <= offset) - 1;
         (index + 1, offset - self.lines[index])
     }
-    fn node(&self, name: &str, range: TextRange, mut fields: Node) -> Node {
+    // Every workspace tree stays in memory for cross-file rules, so nodes carry
+    // only what rules read: absent fields read as null or empty through
+    // `child`, `items` and indexing, and end positions are never consulted.
+    // Each map is allocated once at its final size: appending to the field map
+    // would double its capacity and roughly double the tree's footprint.
+    fn node(&self, name: &str, range: TextRange, fields: Node) -> Node {
         let (line, col) = self.position(range.start().to_usize());
-        let (end_line, end_col) = self.position(range.end().to_usize());
-        let map = fields.as_object_mut().unwrap();
+        let Value::Object(fields) = fields else {
+            unreachable!("node fields are an object")
+        };
+        let kept = |v: &Value| !(v.is_null() || v.as_array().is_some_and(Vec::is_empty));
+        let mut map =
+            serde_json::Map::with_capacity(4 + fields.values().filter(|v| kept(v)).count());
+        for (k, v) in fields {
+            if kept(&v) {
+                map.insert(k, v);
+            }
+        }
         map.insert("_type".into(), json!(name));
         map.insert("_id".into(), json!(self.next.get()));
         self.next.set(self.next.get() + 1);
         map.insert("lineno".into(), json!(line));
         map.insert("col_offset".into(), json!(col));
-        map.insert("end_lineno".into(), json!(end_line));
-        map.insert("end_col_offset".into(), json!(end_col));
-        fields
+        Value::Object(map)
     }
+    /// Operator and expression-context markers are only ever compared by kind;
+    /// they keep a unique `_id` because parent maps key every child by id.
     fn tag(&self, value: impl std::fmt::Debug) -> Node {
-        self.node(
-            &format!("{value:?}"),
-            TextRange::default(),
-            node_fields!({}),
-        )
+        let id = self.next.get();
+        self.next.set(id + 1);
+        node_fields!({"_type": format!("{value:?}"), "_id": id})
     }
     fn opt(&self, e: Option<&py::Expr>) -> Node {
         e.map(|e| self.expr(e)).unwrap_or(Value::Null)
@@ -341,11 +353,8 @@ impl<'a> Adapter<'a> {
     }
     fn set_range(&self, node: &mut Node, range: TextRange) {
         let (line, col) = self.position(range.start().to_usize());
-        let (end_line, end_col) = self.position(range.end().to_usize());
         node["lineno"] = json!(line);
         node["col_offset"] = json!(col);
-        node["end_lineno"] = json!(end_line);
-        node["end_col_offset"] = json!(end_col);
     }
     fn fstring(&self, value: &py::FStringValue) -> Vec<Node> {
         let mut values = Vec::new();
@@ -383,8 +392,6 @@ impl<'a> Adapter<'a> {
                 && kind(last) == "Constant"
             {
                 last["value"] = json!(format!("{}{}", s(last, "value"), s(&node, "value")));
-                last["end_lineno"] = node["end_lineno"].clone();
-                last["end_col_offset"] = node["end_col_offset"].clone();
             } else {
                 merged.push(node)
             }

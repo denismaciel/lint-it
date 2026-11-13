@@ -324,6 +324,22 @@ def test_invalid_manifests_name_the_problem(project: Project, manifest: str, mes
         project.load()
 
 
+def test_virtual_environments_are_skipped_whatever_their_name(project: Project) -> None:
+    site = ".venv315/lib/python3.15/site-packages/dep"
+    project.write(
+        {
+            "src/example/core.py": "",
+            ".venv315/pyvenv.cfg": "home = /usr/bin\n",
+            f"{site}/__init__.py": "",
+            f"{site}/pyproject.toml": "[project]\nname = 'dep'\n",
+        }
+    )
+    workspace = project.load()
+
+    assert [package.root for package in workspace.packages] == [project.root]
+    assert [source.path for source in workspace.sources] == [project.root / "src/example/core.py"]
+
+
 def test_workspace_without_projects_is_a_manifest_error(tmp_path) -> None:
     with pytest.raises(ManifestError, match=r"no pyproject\.toml"):
         Project(tmp_path).load()

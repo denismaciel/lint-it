@@ -1,7 +1,9 @@
 //! Conservative, flow-sensitive bindings matching the Python implementation.
 use crate::ast::{self, Node, child, children, id, items, kind, s, walk};
 use std::collections::{BTreeSet, HashMap};
-pub type Symbols = HashMap<usize, BTreeSet<String>>;
+/// Resolved names per expression id. `None` records an unresolved expression
+/// without allocating; most expressions in real code are unresolved.
+pub type Symbols = HashMap<usize, Option<BTreeSet<String>>>;
 type Bindings = HashMap<String, BTreeSet<String>>;
 fn unknown() -> BTreeSet<String> {
     BTreeSet::from(["?".into()])
@@ -10,7 +12,10 @@ fn singleton(s: impl Into<String>) -> BTreeSet<String> {
     BTreeSet::from([s.into()])
 }
 pub fn names(symbols: &Symbols, node: &Node) -> BTreeSet<String> {
-    symbols.get(&id(node)).cloned().unwrap_or_else(unknown)
+    symbols
+        .get(&id(node))
+        .and_then(Clone::clone)
+        .unwrap_or_else(unknown)
 }
 pub fn absolute_module(node: &Node, package: Option<&str>) -> Option<String> {
     let level = child(node, "level").as_u64().unwrap_or(0) as usize;
@@ -303,7 +308,9 @@ impl<'a> Resolver<'a> {
             return;
         }
         if is_expr(node) {
-            self.references.insert(id(node), self.names(node));
+            let names = self.names(node);
+            let resolved = !(names.len() == 1 && names.contains("?"));
+            self.references.insert(id(node), resolved.then_some(names));
         }
         match kind(node) {
             "Module" => {
