@@ -38,10 +38,10 @@ laundered through a re-export.
 
 lint-it is distributed as a Python package from GitHub, not PyPI. The CLI runs
 a bundled Rust executable; clients do not need Cargo or a Rust toolchain.
-Pin a release tag (currently `v0.20.0`):
+Pin a release tag (currently `v0.20.1`):
 
 ```bash
-uv add --dev 'lint-it @ git+https://github.com/denismaciel/lint-it.git@v0.20.0'
+uv add --dev 'lint-it @ git+https://github.com/denismaciel/lint-it.git@v0.20.1'
 ```
 
 Or run it with pre-commit:
@@ -49,7 +49,7 @@ Or run it with pre-commit:
 ```yaml
 repos:
   - repo: https://github.com/denismaciel/lint-it
-    rev: v0.20.0
+    rev: v0.20.1
     hooks:
       - id: lint-it
 ```

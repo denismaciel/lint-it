@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import tomllib
 from dataclasses import replace
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from lint_it import baseline
@@ -32,11 +33,17 @@ def find_root(start: Path) -> Path:
 
 
 def _walk(root: Path, pattern: str) -> list[Path]:
-    return sorted(
-        path.resolve()
-        for path in root.rglob(pattern)
-        if not IGNORED_DIRECTORIES.intersection(path.relative_to(root).parts)
-    )
+    """Files under ``root`` matching ``pattern``, pruning ignored directories and
+    virtual environments (any directory holding ``pyvenv.cfg``, whatever its name)."""
+    found: list[Path] = []
+    for directory, subdirectories, files in root.walk():
+        subdirectories[:] = [
+            name
+            for name in subdirectories
+            if name not in IGNORED_DIRECTORIES and not (directory / name / "pyvenv.cfg").is_file()
+        ]
+        found.extend(directory / name for name in files if fnmatchcase(name, pattern))
+    return sorted(path.resolve() for path in found)
 
 
 def load_workspace(root: Path) -> Workspace:

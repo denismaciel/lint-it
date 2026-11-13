@@ -532,6 +532,11 @@ const IGNORED: &[&str] = &[
     "node_modules",
     "target",
 ];
+/// Every virtual environment has a `pyvenv.cfg`, whatever the directory is called
+/// (`.venv314`, `env`, `venv-prod`). Its site-packages is never workspace code.
+fn is_virtualenv(e: &walkdir::DirEntry) -> bool {
+    e.file_type().is_dir() && e.path().join("pyvenv.cfg").is_file()
+}
 fn cache_imports<'a>(
     nodes: impl IntoIterator<Item = &'a ast::Node>,
     package: Option<&str>,
@@ -652,17 +657,7 @@ impl Workspace {
                         "FunctionDef" | "AsyncFunctionDef" | "Lambda" => continue,
                         "Import" | "ImportFrom" => imports.push(node),
                         _ => {
-                            if let Some(object) = node.as_object() {
-                                for value in object.values() {
-                                    if value.get("_type").is_some() {
-                                        pending.push(value);
-                                    } else if let Some(array) = value.as_array() {
-                                        pending.extend(
-                                            array.iter().filter(|v| v.get("_type").is_some()),
-                                        );
-                                    }
-                                }
-                            }
+                            pending.extend(ast::children(node));
                         }
                     }
                 }
@@ -862,7 +857,8 @@ pub fn load(root: &Path) -> Result<Workspace, String> {
     let mut projects = BTreeSet::new();
     let mut paths = BTreeSet::new();
     for entry in walkdir::WalkDir::new(&root).into_iter().filter_entry(|e| {
-        e.depth() == 0 || !IGNORED.contains(&e.file_name().to_string_lossy().as_ref())
+        e.depth() == 0
+            || !(IGNORED.contains(&e.file_name().to_string_lossy().as_ref()) || is_virtualenv(e))
     }) {
         let e = entry.map_err(|e| e.to_string())?;
         if e.file_type().is_file() {
@@ -1231,6 +1227,22 @@ mod tests {
             toml_error(error, text),
             "Expected ']' at the end of a table declaration (at line 1, column 11)"
         );
+    }
+    #[test]
+    fn virtual_environments_are_skipped_whatever_their_name() {
+        let root = std::env::temp_dir().join(format!("lint-it-native-venv-{}", std::process::id()));
+        let site = root.join(".venv315/lib/python3.15/site-packages/dep");
+        std::fs::create_dir_all(&site).unwrap();
+        std::fs::create_dir_all(root.join("src/example")).unwrap();
+        std::fs::write(root.join("pyproject.toml"), "[project]\nname='example'\n").unwrap();
+        std::fs::write(root.join("src/example/core.py"), "").unwrap();
+        std::fs::write(root.join(".venv315/pyvenv.cfg"), "home = /usr/bin\n").unwrap();
+        std::fs::write(site.join("__init__.py"), "").unwrap();
+        std::fs::write(site.join("pyproject.toml"), "[project]\nname='dep'\n").unwrap();
+        let ws = load(&root).unwrap();
+        assert_eq!(ws.sources.len(), 1);
+        assert!(!ws.sources[0].filename.contains(".venv315"));
+        std::fs::remove_dir_all(&root).unwrap();
     }
     #[test]
     fn native_workspace_classification_and_policy() {

@@ -1,47 +1,257 @@
 //! Ruff's production parser with a small CPython-shaped adapter for rule parity.
 use ruff_python_ast as py;
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use serde_json::{Value, json};
 use std::cell::Cell;
 use std::collections::VecDeque;
-// Unlike json!, this builder moves child values into their parent. Serializing
-// a borrowed Value here would recursively copy each subtree at every ancestor.
 macro_rules! node_fields {
     ({ $($key:literal : $value:expr),* $(,)? }) => {
-        Value::Object(serde_json::Map::from_iter([
-            $(($key.to_owned(), Value::from($value))),*
-        ]))
+        vec![$(($key, Node::from($value))),*]
     };
 }
-pub type Node = Value;
+type Fields = Vec<(&'static str, Node)>;
+/// A CPython-shaped syntax tree value. Every workspace tree stays in memory
+/// for cross-file rules, so the representation is compact: kind, id and start
+/// position are struct fields, field names are static, and operator and
+/// expression-context markers are stored inline.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Node {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(Box<str>),
+    List(Box<[Node]>),
+    Obj(Box<Obj>),
+    /// An operator or expression context: only its kind and id are ever read.
+    Tag(&'static str, u32),
+    Bytes,
+    Ellipsis,
+    /// An integer literal too large for `i64`, kept as source digits.
+    BigInt(Box<str>),
+    Complex(Box<[f64; 2]>),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Obj {
+    kind: &'static str,
+    id: u32,
+    line: u32,
+    col: u32,
+    fields: Box<[(&'static str, Node)]>,
+}
+static NULL: Node = Node::Null;
+impl Node {
+    pub fn get(&self, field: &str) -> Option<&Node> {
+        match self {
+            Node::Obj(o) => o.fields.iter().find(|(k, _)| *k == field).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+    pub fn get_mut(&mut self, field: &str) -> Option<&mut Node> {
+        match self {
+            Node::Obj(o) => o
+                .fields
+                .iter_mut()
+                .find(|(k, _)| *k == field)
+                .map(|(_, v)| v),
+            _ => None,
+        }
+    }
+    /// Field values in declaration order; empty for anything but a syntax node.
+    pub fn values(&self) -> impl Iterator<Item = &Node> {
+        let fields: &[(&'static str, Node)] = match self {
+            Node::Obj(o) => &o.fields,
+            _ => &[],
+        };
+        fields.iter().map(|(_, v)| v)
+    }
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Node> {
+        let fields: &mut [(&'static str, Node)] = match self {
+            Node::Obj(o) => &mut o.fields,
+            _ => &mut [],
+        };
+        fields.iter_mut().map(|(_, v)| v)
+    }
+    /// True for syntax nodes and markers: everything that has a kind.
+    pub fn is_node(&self) -> bool {
+        matches!(self, Node::Obj(_) | Node::Tag(..))
+    }
+    pub fn is_null(&self) -> bool {
+        matches!(self, Node::Null)
+    }
+    pub fn is_string(&self) -> bool {
+        matches!(self, Node::Str(_))
+    }
+    pub fn is_number(&self) -> bool {
+        matches!(self, Node::Int(_) | Node::Float(_))
+    }
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, Node::Bool(_))
+    }
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Node::Str(s) => Some(s),
+            _ => None,
+        }
+    }
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Node::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            Node::Int(i) => u64::try_from(*i).ok(),
+            _ => None,
+        }
+    }
+    pub fn as_list_mut(&mut self) -> Option<&mut [Node]> {
+        match self {
+            Node::List(l) => Some(l),
+            _ => None,
+        }
+    }
+    /// Start position as (line, byte column); `None` for non-syntax values.
+    pub fn position(&self) -> Option<(usize, usize)> {
+        match self {
+            Node::Obj(o) => Some((o.line as usize, o.col as usize)),
+            _ => None,
+        }
+    }
+    pub fn set_position(&mut self, line: usize, col: usize) {
+        if let Node::Obj(o) = self {
+            o.line = line as u32;
+            o.col = col as u32;
+        }
+    }
+    pub fn set_id(&mut self, id: usize) {
+        match self {
+            Node::Obj(o) => o.id = id as u32,
+            Node::Tag(_, i) => *i = id as u32,
+            _ => {}
+        }
+    }
+    fn set(&mut self, field: &str, value: Node) {
+        if let Some(slot) = self.get_mut(field) {
+            *slot = value;
+        }
+    }
+}
+impl std::ops::Index<&str> for Node {
+    type Output = Node;
+    fn index(&self, field: &str) -> &Node {
+        self.get(field).unwrap_or(&NULL)
+    }
+}
+/// The JSON text of a literal value, as the reference implementation renders it.
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use serde_json::json;
+        let value = match self {
+            Node::Null => json!(null),
+            Node::Bool(b) => json!(b),
+            Node::Int(i) => json!(i),
+            Node::Float(x) => json!(x),
+            Node::Str(s) => json!(&**s),
+            Node::Tag(kind, _) => json!(kind),
+            Node::Bytes => json!({"_bytes": true}),
+            Node::Ellipsis => json!({"_ellipsis": true}),
+            Node::BigInt(digits) => json!({"_integer": &**digits}),
+            Node::Complex(parts) => json!({"_complex": parts.to_vec()}),
+            Node::List(_) | Node::Obj(_) => return write!(f, "{self:?}"),
+        };
+        write!(f, "{value}")
+    }
+}
+impl From<&str> for Node {
+    fn from(value: &str) -> Self {
+        Node::Str(value.into())
+    }
+}
+impl From<String> for Node {
+    fn from(value: String) -> Self {
+        Node::Str(value.into())
+    }
+}
+impl From<bool> for Node {
+    fn from(value: bool) -> Self {
+        Node::Bool(value)
+    }
+}
+impl From<i64> for Node {
+    fn from(value: i64) -> Self {
+        Node::Int(value)
+    }
+}
+impl From<i32> for Node {
+    fn from(value: i32) -> Self {
+        Node::Int(value.into())
+    }
+}
+impl From<u32> for Node {
+    fn from(value: u32) -> Self {
+        Node::Int(value.into())
+    }
+}
+impl From<usize> for Node {
+    fn from(value: usize) -> Self {
+        Node::Int(value as i64)
+    }
+}
+// JSON has no non-finite numbers: the reference tree holds null for them.
+impl From<f64> for Node {
+    fn from(value: f64) -> Self {
+        if value.is_finite() {
+            Node::Float(value)
+        } else {
+            Node::Null
+        }
+    }
+}
+impl<T: Into<Node>> From<Option<T>> for Node {
+    fn from(value: Option<T>) -> Self {
+        value.map_or(Node::Null, Into::into)
+    }
+}
+impl<T: Into<Node>> From<Vec<T>> for Node {
+    fn from(value: Vec<T>) -> Self {
+        Node::List(value.into_iter().map(Into::into).collect())
+    }
+}
 pub use crate::model::ParseFailure;
 pub fn kind(n: &Node) -> &str {
-    s(n, "_type")
+    match n {
+        Node::Obj(o) => o.kind,
+        Node::Tag(kind, _) => kind,
+        _ => "",
+    }
 }
 pub fn s<'a>(n: &'a Node, field: &str) -> &'a str {
-    n.get(field).and_then(Value::as_str).unwrap_or("")
+    n.get(field).and_then(Node::as_str).unwrap_or("")
 }
 pub fn items<'a>(n: &'a Node, field: &str) -> &'a [Node] {
-    n.get(field)
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[])
+    match n.get(field) {
+        Some(Node::List(l)) => l,
+        _ => &[],
+    }
 }
 pub fn child<'a>(n: &'a Node, field: &str) -> &'a Node {
-    n.get(field).unwrap_or(&Value::Null)
+    n.get(field).unwrap_or(&NULL)
 }
 pub fn id(n: &Node) -> usize {
-    n.get("_id").and_then(Value::as_u64).unwrap_or(0) as usize
+    match n {
+        Node::Obj(o) => o.id as usize,
+        Node::Tag(_, id) => *id as usize,
+        _ => 0,
+    }
 }
 pub fn children(n: &Node) -> Vec<&Node> {
     let mut result = Vec::new();
-    if let Some(fields) = n.as_object() {
-        for value in fields.values() {
-            if !kind(value).is_empty() {
-                result.push(value);
-            } else if let Some(values) = value.as_array() {
-                result.extend(values.iter().filter(|v| !kind(v).is_empty()));
-            }
+    for value in n.values() {
+        if value.is_node() {
+            result.push(value);
+        } else if let Node::List(values) = value {
+            result.extend(values.iter().filter(|v| v.is_node()));
         }
     }
     result
@@ -55,6 +265,12 @@ pub fn walk(n: &Node) -> Vec<&Node> {
     }
     result
 }
+// CPython's names for Ruff's operator and expression-context variants.
+const TAGS: &[&str] = &[
+    "Load", "Store", "Del", "Invalid", "And", "Or", "Add", "Sub", "Mult", "MatMult", "Div", "Mod",
+    "Pow", "LShift", "RShift", "BitOr", "BitXor", "BitAnd", "FloorDiv", "Invert", "Not", "UAdd",
+    "USub", "Eq", "NotEq", "Lt", "LtE", "Gt", "GtE", "Is", "IsNot", "In", "NotIn",
+];
 pub fn parse(source: &str) -> Result<Node, ParseFailure> {
     let adapter = Adapter::new(source);
     let parser_span = crate::profile::span("ruff_parse");
@@ -88,7 +304,7 @@ pub fn parse(source: &str) -> Result<Node, ParseFailure> {
     Ok(adapter.node(
         "Module",
         parsed.syntax().range,
-        node_fields!({"body":adapter.stmts(&parsed.syntax().body),"type_ignores":Vec::<Value>::new()}),
+        node_fields!({"body":adapter.stmts(&parsed.syntax().body),"type_ignores":Vec::<Node>::new()}),
     ))
 }
 pub fn parse_expression(source: &str) -> Option<Node> {
@@ -148,28 +364,34 @@ impl<'a> Adapter<'a> {
         let index = self.lines.partition_point(|p| *p <= offset) - 1;
         (index + 1, offset - self.lines[index])
     }
-    fn node(&self, name: &str, range: TextRange, mut fields: Node) -> Node {
+    fn node(&self, name: &'static str, range: TextRange, mut fields: Fields) -> Node {
         let (line, col) = self.position(range.start().to_usize());
-        let (end_line, end_col) = self.position(range.end().to_usize());
-        let map = fields.as_object_mut().unwrap();
-        map.insert("_type".into(), json!(name));
-        map.insert("_id".into(), json!(self.next.get()));
-        self.next.set(self.next.get() + 1);
-        map.insert("lineno".into(), json!(line));
-        map.insert("col_offset".into(), json!(col));
-        map.insert("end_lineno".into(), json!(end_line));
-        map.insert("end_col_offset".into(), json!(end_col));
-        fields
+        // Absent fields read as null or empty through `child`, `items` and indexing.
+        fields.retain(|(_, v)| !(v.is_null() || matches!(v, Node::List(l) if l.is_empty())));
+        Node::Obj(Box::new(Obj {
+            kind: name,
+            id: self.next_id(),
+            line: line as u32,
+            col: col as u32,
+            fields: fields.into_boxed_slice(),
+        }))
     }
+    fn next_id(&self) -> u32 {
+        let id = self.next.get();
+        self.next.set(id + 1);
+        id as u32
+    }
+    // Markers keep a unique id because parent maps key every child by id.
     fn tag(&self, value: impl std::fmt::Debug) -> Node {
-        self.node(
-            &format!("{value:?}"),
-            TextRange::default(),
-            node_fields!({}),
-        )
+        let name = format!("{value:?}");
+        let kind = TAGS
+            .iter()
+            .find(|tag| **tag == name)
+            .unwrap_or_else(|| unreachable!("unknown operator or context {name}"));
+        Node::Tag(kind, self.next_id())
     }
     fn opt(&self, e: Option<&py::Expr>) -> Node {
-        e.map(|e| self.expr(e)).unwrap_or(Value::Null)
+        e.map(|e| self.expr(e)).unwrap_or(Node::Null)
     }
     fn exprs(&self, e: &[py::Expr]) -> Vec<Node> {
         e.iter().map(|e| self.expr(e)).collect()
@@ -200,7 +422,7 @@ impl<'a> Adapter<'a> {
             .collect()
     }
     fn parameter(&self, p: &py::Parameter) -> Node {
-        self.node("arg",TextRange::new(p.name.range().start(),p.range.end()),node_fields!({"arg":p.name.as_str(),"annotation":self.opt(p.annotation.as_deref()),"type_comment":Value::Null}))
+        self.node("arg",TextRange::new(p.name.range().start(),p.range.end()),node_fields!({"arg":p.name.as_str(),"annotation":self.opt(p.annotation.as_deref()),"type_comment":Node::Null}))
     }
     fn parameters(&self, p: Option<&py::Parameters>) -> Node {
         let empty = py::Parameters::default();
@@ -222,7 +444,7 @@ impl<'a> Adapter<'a> {
                 } else {
                     "FunctionDef"
                 },
-                node_fields!({"name":n.name.as_str(),"args":self.parameters(Some(&n.parameters)),"body":self.stmts(&n.body),"decorator_list":n.decorator_list.iter().map(|d|self.expr(&d.expression)).collect::<Vec<_>>(),"returns":self.opt(n.returns.as_deref()),"type_comment":Value::Null,"type_params":self.types(n.type_params.as_deref())}),
+                node_fields!({"name":n.name.as_str(),"args":self.parameters(Some(&n.parameters)),"body":self.stmts(&n.body),"decorator_list":n.decorator_list.iter().map(|d|self.expr(&d.expression)).collect::<Vec<_>>(),"returns":self.opt(n.returns.as_deref()),"type_comment":Node::Null,"type_params":self.types(n.type_params.as_deref())}),
             ),
             py::Stmt::ClassDef(n) => (
                 "ClassDef",
@@ -239,7 +461,7 @@ impl<'a> Adapter<'a> {
             ),
             py::Stmt::Assign(n) => (
                 "Assign",
-                node_fields!({"targets":self.exprs(&n.targets),"value":self.expr(&n.value),"type_comment":Value::Null}),
+                node_fields!({"targets":self.exprs(&n.targets),"value":self.expr(&n.value),"type_comment":Node::Null}),
             ),
             py::Stmt::AugAssign(n) => (
                 "AugAssign",
@@ -251,7 +473,7 @@ impl<'a> Adapter<'a> {
             ),
             py::Stmt::For(n) => (
                 if n.is_async { "AsyncFor" } else { "For" },
-                node_fields!({"target":self.expr(&n.target),"iter":self.expr(&n.iter),"body":self.stmts(&n.body),"orelse":self.stmts(&n.orelse),"type_comment":Value::Null}),
+                node_fields!({"target":self.expr(&n.target),"iter":self.expr(&n.iter),"body":self.stmts(&n.body),"orelse":self.stmts(&n.orelse),"type_comment":Node::Null}),
             ),
             py::Stmt::While(n) => (
                 "While",
@@ -273,7 +495,7 @@ impl<'a> Adapter<'a> {
             }
             py::Stmt::With(n) => (
                 if n.is_async { "AsyncWith" } else { "With" },
-                node_fields!({"items":n.items.iter().map(|i|self.node("withitem",i.range,node_fields!({"context_expr":self.expr(&i.context_expr),"optional_vars":self.opt(i.optional_vars.as_deref())}))).collect::<Vec<_>>(),"body":self.stmts(&n.body),"type_comment":Value::Null}),
+                node_fields!({"items":n.items.iter().map(|i|self.node("withitem",i.range,node_fields!({"context_expr":self.expr(&i.context_expr),"optional_vars":self.opt(i.optional_vars.as_deref())}))).collect::<Vec<_>>(),"body":self.stmts(&n.body),"type_comment":Node::Null}),
             ),
             py::Stmt::Match(n) => (
                 "Match",
@@ -335,27 +557,21 @@ impl<'a> Adapter<'a> {
     }
     fn interpolated(&self, e: &py::InterpolatedStringElement) -> Node {
         match e {
-        py::InterpolatedStringElement::Literal(n)=>self.node("Constant",n.range,node_fields!({"value":n.value.as_ref(),"kind":Value::Null})),
+        py::InterpolatedStringElement::Literal(n)=>self.node("Constant",n.range,node_fields!({"value":n.value.as_ref()})),
         py::InterpolatedStringElement::Interpolation(n)=>self.node("FormattedValue",n.range,node_fields!({"value":self.expr(&n.expression),"conversion":n.conversion as i32,"format_spec":n.format_spec.as_ref().map(|f|self.node("JoinedStr",TextRange::new(f.range.start() - TextSize::from(1), f.range.end()),node_fields!({"values":f.elements.iter().map(|e|self.interpolated(e)).collect::<Vec<_>>()})))})),
     }
     }
     fn set_range(&self, node: &mut Node, range: TextRange) {
         let (line, col) = self.position(range.start().to_usize());
-        let (end_line, end_col) = self.position(range.end().to_usize());
-        node["lineno"] = json!(line);
-        node["col_offset"] = json!(col);
-        node["end_lineno"] = json!(end_line);
-        node["end_col_offset"] = json!(end_col);
+        node.set_position(line, col);
     }
     fn fstring(&self, value: &py::FStringValue) -> Vec<Node> {
         let mut values = Vec::new();
         for part in value.iter() {
             match part {
-                py::FStringPartRef::Literal(n) => values.push(self.node(
-                    "Constant",
-                    n.range,
-                    node_fields!({"value":n.as_str(),"kind":Value::Null}),
-                )),
+                py::FStringPartRef::Literal(n) => {
+                    values.push(self.node("Constant", n.range, node_fields!({"value":n.as_str()})))
+                }
                 py::FStringPartRef::FString(n) => {
                     for element in &n.elements {
                         if let py::InterpolatedStringElement::Interpolation(interpolation) = element
@@ -368,7 +584,7 @@ impl<'a> Adapter<'a> {
                                     start,
                                     start + TextSize::try_from(debug.as_str().len()).unwrap(),
                                 ),
-                                node_fields!({"value":debug.as_str(),"kind":Value::Null}),
+                                node_fields!({"value":debug.as_str()}),
                             ));
                         }
                         values.push(self.interpolated(element));
@@ -382,9 +598,8 @@ impl<'a> Adapter<'a> {
                 && let Some(last) = merged.last_mut()
                 && kind(last) == "Constant"
             {
-                last["value"] = json!(format!("{}{}", s(last, "value"), s(&node, "value")));
-                last["end_lineno"] = node["end_lineno"].clone();
-                last["end_col_offset"] = node["end_col_offset"].clone();
+                let merged = format!("{}{}", s(last, "value"), s(&node, "value"));
+                last.set("value", merged.into());
             } else {
                 merged.push(node)
             }
@@ -457,39 +672,22 @@ impl<'a> Adapter<'a> {
                 "TemplateStr",
                 node_fields!({"values":n.value.elements().map(|e|self.interpolated(e)).collect::<Vec<_>>()}),
             ),
-            py::Expr::StringLiteral(n) => (
-                "Constant",
-                node_fields!({"value":n.value.to_str(),"kind":Value::Null}),
-            ),
-            py::Expr::BytesLiteral(_) => (
-                "Constant",
-                node_fields!({"value":node_fields!({"_bytes":true}),"kind":Value::Null}),
-            ),
+            py::Expr::StringLiteral(n) => ("Constant", node_fields!({"value":n.value.to_str()})),
+            py::Expr::BytesLiteral(_) => ("Constant", node_fields!({"value":Node::Bytes})),
             py::Expr::NumberLiteral(n) => {
                 let value = match &n.value {
                     py::Number::Int(i) => i
                         .as_i64()
-                        .map(|i| json!(i))
-                        .unwrap_or_else(|| node_fields!({"_integer":i.to_string()})),
-                    py::Number::Float(f) => json!(f),
-                    py::Number::Complex { real, imag } => {
-                        node_fields!({"_complex":vec![*real,*imag]})
-                    }
+                        .map(Node::Int)
+                        .unwrap_or_else(|| Node::BigInt(i.to_string().into())),
+                    py::Number::Float(f) => Node::from(*f),
+                    py::Number::Complex { real, imag } => Node::Complex(Box::new([*real, *imag])),
                 };
-                ("Constant", node_fields!({"value":value,"kind":Value::Null}))
+                ("Constant", node_fields!({"value":value}))
             }
-            py::Expr::BooleanLiteral(n) => (
-                "Constant",
-                node_fields!({"value":n.value,"kind":Value::Null}),
-            ),
-            py::Expr::NoneLiteral(_) => (
-                "Constant",
-                node_fields!({"value":Value::Null,"kind":Value::Null}),
-            ),
-            py::Expr::EllipsisLiteral(_) => (
-                "Constant",
-                node_fields!({"value":node_fields!({"_ellipsis":true}),"kind":Value::Null}),
-            ),
+            py::Expr::BooleanLiteral(n) => ("Constant", node_fields!({"value":n.value})),
+            py::Expr::NoneLiteral(_) => ("Constant", node_fields!({"value":Node::Null})),
+            py::Expr::EllipsisLiteral(_) => ("Constant", node_fields!({"value":Node::Ellipsis})),
             py::Expr::Attribute(n) => (
                 "Attribute",
                 node_fields!({"value":self.expr(&n.value),"attr":n.attr.as_str(),"ctx":self.tag(n.ctx)}),
@@ -529,7 +727,7 @@ impl<'a> Adapter<'a> {
             }
             py::Pattern::MatchSingleton(n) => (
                 "MatchSingleton",
-                node_fields!({"value":match n.value {py::Singleton::None=>Value::Null,py::Singleton::True=>json!(true),py::Singleton::False=>json!(false)}}),
+                node_fields!({"value":match n.value {py::Singleton::None=>Node::Null,py::Singleton::True=>Node::Bool(true),py::Singleton::False=>Node::Bool(false)}}),
             ),
             py::Pattern::MatchSequence(n) => (
                 "MatchSequence",
@@ -568,9 +766,9 @@ mod tests {
         let tree = parse("é = consume(x for x in values)\n").unwrap();
         let nodes = walk(&tree);
         let call = nodes.iter().find(|n| kind(n) == "Call").unwrap();
-        assert_eq!(call["col_offset"], 5);
+        assert_eq!(call.position().unwrap().1, 5);
         let generator = nodes.iter().find(|n| kind(n) == "GeneratorExp").unwrap();
-        assert_eq!(generator["col_offset"], 12);
+        assert_eq!(generator.position().unwrap().1, 12);
         let ids: std::collections::BTreeSet<_> = nodes.iter().map(|n| id(n)).collect();
         assert_eq!(ids.len(), nodes.len());
     }
@@ -586,14 +784,14 @@ mod tests {
     fn declarations_and_variadics_exclude_decorators_and_stars() {
         let tree=parse("@decorate\nclass  C:\n    @decorate\n    async def f(*args: int, **kwargs: str): pass\n").unwrap();
         let class = &items(&tree, "body")[0];
-        assert_eq!(class["lineno"], 2);
-        assert_eq!(class["col_offset"], 0);
+        assert_eq!(class.position().unwrap().0, 2);
+        assert_eq!(class.position().unwrap().1, 0);
         let function = &items(class, "body")[0];
-        assert_eq!(function["lineno"], 4);
-        assert_eq!(function["col_offset"], 4);
+        assert_eq!(function.position().unwrap().0, 4);
+        assert_eq!(function.position().unwrap().1, 4);
         let args = child(function, "args");
-        assert_eq!(child(args, "vararg")["col_offset"], 17);
-        assert_eq!(child(args, "kwarg")["col_offset"], 30);
+        assert_eq!(child(args, "vararg").position().unwrap().1, 17);
+        assert_eq!(child(args, "kwarg").position().unwrap().1, 30);
     }
     #[test]
     fn malformed_decimal_literal_matches_cpython() {

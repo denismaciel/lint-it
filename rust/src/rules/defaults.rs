@@ -94,7 +94,7 @@ pub(super) fn unparse(n: &Node) -> String {
                 } else {
                     format!("'{}'", escaped.replace('\'', "\\'"))
                 }
-            } else if v.get("_ellipsis").is_some() {
+            } else if matches!(v, Node::Ellipsis) {
                 "...".into()
             } else {
                 v.to_string()
@@ -119,7 +119,7 @@ fn immutable(n: &Node, constants: &HashMap<String, &Node>) -> bool {
                 && kind(child(n, "operand")) == "Constant"
                 && (child(n, "operand")["value"].is_number()
                     || child(n, "operand")["value"].is_boolean()
-                    || child(n, "operand")["value"].get("_complex").is_some())
+                    || matches!(child(n, "operand")["value"], Node::Complex(_)))
         }
         "Name" => {
             let name = s(n, "id");
