@@ -1,14 +1,14 @@
 {
-  "version": "0.20.0",
-  "rust_tree": "e028b2aa603a3c8d515d7e9d4ddcf4aee21beee8",
+  "version": "0.20.1",
+  "rust_tree": "6ba1d0c42b33a6e541cc2d44c60639660d56b2d5",
   "workflow_runs": [
-    42964480845
+    43483053627
   ],
   "sha256": {
-    "lint-it-rust-aarch64-apple-darwin": "0b187778eb0f3ee3a2b601661f790246e58afc3cc798ff73378130020cc0afb9",
-    "lint-it-rust-aarch64-unknown-linux-musl": "99ea498a71e464b85213e633d622eab2f00270a0b97daf87cf94f4c3ab9fe886",
-    "lint-it-rust-x86_64-apple-darwin": "9350c6d34fa297bfb41cb2d9f2d23f273ea24626188c94ac51da28a70296c9e4",
-    "lint-it-rust-x86_64-pc-windows-msvc.exe": "f624cc5060be9335db4cab4b112c4fe9de811c8fe0be770510cfb36bcbbd197b",
-    "lint-it-rust-x86_64-unknown-linux-musl": "b438c374a47725ff327a1a7e700319f3b4aff4268c5c60dc1e674d6158d48174"
+    "lint-it-rust-aarch64-apple-darwin": "f7886550144f634fc04a554190dc7d85f7b874fb5e34151a13accaaade3f58e8",
+    "lint-it-rust-aarch64-unknown-linux-musl": "97d25a487259152c56f47a40fc34e94160f8b642774b1fab8d8a89077f7d9a84",
+    "lint-it-rust-x86_64-apple-darwin": "176a6d079d29ce0f6d6432cb9e5fc367a34e6f9ef08323aee7e986d482723d5f",
+    "lint-it-rust-x86_64-pc-windows-msvc.exe": "8cf6f298552f3c33de5a3c02d5b9d5f34aad6b49bab9e18490c015143cfc8d60",
+    "lint-it-rust-x86_64-unknown-linux-musl": "71ee9e7835ca1cec38eb24fcc75cd358a91973b6f79b55a6f8fefb6f4c30e0c8"
   }
 }
